@@ -16,6 +16,7 @@ import wishlistRoutes from "./routes/wishlistRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
+import inventoryRoutes from "./routes/inventoryRoutes.js";
 
 // ==========================================
 // APP
@@ -79,6 +80,12 @@ app.use("/api/reviews", reviewRoutes);
 // ==========================================
 
 app.use("/api/orders", orderRoutes);
+
+// ==========================================
+// INVENTORY ROUTES
+// ==========================================
+
+app.use("/api/inventory", inventoryRoutes);
 
 // ==========================================
 // COUPON ROUTES
