@@ -11,7 +11,10 @@ import {
   deleteOrder,
 } from "../controllers/orderController.js";
 
-import { protect } from "../middleware/authMiddleware.js";
+import {
+  protect,
+  authorizeRoles,
+} from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -42,44 +45,52 @@ router.get(
 // ==========================================
 // ADMIN - GET ALL ORDERS
 // GET /api/orders/admin/all
+// Admin Required
 // ==========================================
 
 router.get(
   "/admin/all",
   protect,
+  authorizeRoles("admin"),
   getAllOrders
 );
 
 // ==========================================
 // ADMIN - GET SINGLE ORDER
 // GET /api/orders/admin/:orderId
+// Admin Required
 // ==========================================
 
 router.get(
   "/admin/:orderId",
   protect,
+  authorizeRoles("admin"),
   getAdminOrderById
 );
 
 // ==========================================
 // ADMIN - UPDATE ORDER STATUS
 // PUT /api/orders/admin/:orderId/status
+// Admin Required
 // ==========================================
 
 router.put(
   "/admin/:orderId/status",
   protect,
+  authorizeRoles("admin"),
   updateOrderStatus
 );
 
 // ==========================================
 // ADMIN - DELETE ORDER
 // DELETE /api/orders/admin/:orderId
+// Admin Required
 // ==========================================
 
 router.delete(
   "/admin/:orderId",
   protect,
+  authorizeRoles("admin"),
   deleteOrder
 );
 

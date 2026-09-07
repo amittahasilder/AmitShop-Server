@@ -1,6 +1,64 @@
 import mongoose from "mongoose";
 
 // ==========================================
+// ORDER STATUS HISTORY SCHEMA
+// ==========================================
+
+const orderStatusHistorySchema = new mongoose.Schema(
+  {
+    // ==========================================
+    // STATUS
+    // ==========================================
+
+    status: {
+      type: String,
+      enum: [
+        "pending",
+        "confirmed",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ],
+      required: [true, "Status is required"],
+    },
+
+    // ==========================================
+    // STATUS NOTE
+    // ==========================================
+
+    note: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [300, "Status note cannot exceed 300 characters"],
+    },
+
+    // ==========================================
+    // UPDATED BY
+    // ==========================================
+
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    // ==========================================
+    // STATUS DATE
+    // ==========================================
+
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    _id: false,
+  }
+);
+
+// ==========================================
 // ORDER ITEM SCHEMA
 // ==========================================
 
@@ -246,6 +304,15 @@ const orderSchema = new mongoose.Schema(
     },
 
     // ==========================================
+    // STATUS HISTORY / TRACKING TIMELINE
+    // ==========================================
+
+    statusHistory: {
+      type: [orderStatusHistorySchema],
+      default: [],
+    },
+
+    // ==========================================
     // ITEM TOTAL
     // ==========================================
 
@@ -347,16 +414,19 @@ const orderSchema = new mongoose.Schema(
 // INDEXES
 // ==========================================
 
+// User orders
 orderSchema.index({
   user: 1,
   createdAt: -1,
 });
 
+// Order status
 orderSchema.index({
   orderStatus: 1,
   createdAt: -1,
 });
 
+// Payment status
 orderSchema.index({
   paymentStatus: 1,
   createdAt: -1,

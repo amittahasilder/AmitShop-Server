@@ -5,6 +5,65 @@ import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 
 // ==========================================
+// HELPER: VALIDATE ORDER ID
+// ==========================================
+
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
+// ==========================================
+// HELPER: GET PRODUCT SELLING PRICE
+// ==========================================
+
+const getProductPrice = (product) => {
+  if (
+    product.discountPrice !== null &&
+    product.discountPrice !== undefined &&
+    product.discountPrice < product.price
+  ) {
+    return product.discountPrice;
+  }
+
+  return product.price;
+};
+
+// ==========================================
+// HELPER: STATUS NOTE
+// ==========================================
+
+const getDefaultStatusNote = (status) => {
+  const notes = {
+    pending: "Order placed",
+    confirmed: "Order confirmed",
+    processing: "Order is being processed",
+    shipped: "Order has been shipped",
+    delivered: "Order delivered successfully",
+    cancelled: "Order cancelled",
+  };
+
+  return notes[status] || "";
+};
+
+// ==========================================
+// HELPER: ADD STATUS HISTORY
+// ==========================================
+
+const addStatusHistory = (
+  order,
+  status,
+  updatedBy,
+  note = ""
+) => {
+  order.statusHistory.push({
+    status,
+    note: note?.trim() || getDefaultStatusNote(status),
+    updatedBy: updatedBy || null,
+    createdAt: new Date(),
+  });
+};
+
+// ==========================================
 // CREATE ORDER
 // POST /api/orders
 // Login Required
@@ -19,7 +78,7 @@ export const createOrder = async (req, res) => {
     } = req.body;
 
     // ==========================================
-    // VALIDATION
+    // VALIDATE SHIPPING ADDRESS
     // ==========================================
 
     if (!shippingAddress) {
@@ -40,12 +99,12 @@ export const createOrder = async (req, res) => {
     } = shippingAddress;
 
     if (
-      !fullName ||
-      !phone ||
-      !address ||
-      !city ||
-      !postalCode ||
-      !country
+      !fullName?.trim() ||
+      !phone?.trim() ||
+      !address?.trim() ||
+      !city?.trim() ||
+      !postalCode?.trim() ||
+      !country?.trim()
     ) {
       return res.status(400).json({
         success: false,
@@ -55,7 +114,7 @@ export const createOrder = async (req, res) => {
     }
 
     // ==========================================
-    // PAYMENT METHOD VALIDATION
+    // VALIDATE PAYMENT METHOD
     // ==========================================
 
     if (!["COD", "STRIPE"].includes(paymentMethod)) {
@@ -73,7 +132,7 @@ export const createOrder = async (req, res) => {
       user: req.user._id,
     }).populate("items.product");
 
-    if (!cart || cart.items.length === 0) {
+    if (!cart || !cart.items || cart.items.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Your cart is empty",
@@ -85,25 +144,45 @@ export const createOrder = async (req, res) => {
     // ==========================================
 
     const orderItems = [];
+    const stockUpdates = [];
 
     let itemsPrice = 0;
 
     // ==========================================
-    // CHECK PRODUCTS & STOCK
+    // CHECK PRODUCTS + STOCK
     // ==========================================
 
-    for (const item of cart.items) {
-      const product = await Product.findById(item.product._id);
+    for (const cartItem of cart.items) {
+      // ------------------------------------------
+      // CHECK PRODUCT EXISTS
+      // ------------------------------------------
+
+      if (!cartItem.product) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "One of the products in your cart no longer exists",
+        });
+      }
+
+      const productId = cartItem.product._id;
+
+      // ------------------------------------------
+      // FETCH LATEST PRODUCT
+      // ------------------------------------------
+
+      const product = await Product.findById(productId);
 
       if (!product) {
         return res.status(404).json({
           success: false,
-          message: `Product not found: ${item.product.name}`,
+          message:
+            "One of the products in your cart no longer exists",
         });
       }
 
       // ------------------------------------------
-      // CHECK ACTIVE STATUS
+      // CHECK ACTIVE
       // ------------------------------------------
 
       if (!product.isActive) {
@@ -114,54 +193,86 @@ export const createOrder = async (req, res) => {
       }
 
       // ------------------------------------------
+      // VALIDATE QUANTITY
+      // ------------------------------------------
+
+      if (
+        !Number.isInteger(cartItem.quantity) ||
+        cartItem.quantity < 1
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid quantity for ${product.name}`,
+        });
+      }
+
+      // ------------------------------------------
       // CHECK STOCK
       // ------------------------------------------
 
-      if (product.stock < item.quantity) {
+      if (product.stock < cartItem.quantity) {
         return res.status(400).json({
           success: false,
           message: `Only ${product.stock} item(s) available for ${product.name}`,
         });
       }
 
-      // ==========================================
-      // CALCULATE PRODUCT PRICE
-      // ==========================================
+      // ------------------------------------------
+      // CALCULATE PRICE
+      // ------------------------------------------
 
-      const itemPrice =
-        product.discountPrice !== null &&
-        product.discountPrice < product.price
-          ? product.discountPrice
-          : product.price;
+      const itemPrice = getProductPrice(product);
 
-      const itemTotal = itemPrice * item.quantity;
+      const itemTotal =
+        itemPrice * cartItem.quantity;
 
       itemsPrice += itemTotal;
 
-      // ==========================================
+      // ------------------------------------------
       // ORDER ITEM SNAPSHOT
-      // ==========================================
+      // ------------------------------------------
 
       orderItems.push({
         product: product._id,
         name: product.name,
         image:
-          product.images && product.images.length > 0
+          product.images &&
+          product.images.length > 0
             ? product.images[0].url
             : "",
         price: itemPrice,
-        quantity: item.quantity,
+        quantity: cartItem.quantity,
+      });
+
+      // ------------------------------------------
+      // PREPARE STOCK UPDATE
+      // ------------------------------------------
+
+      stockUpdates.push({
+        productId: product._id,
+        quantity: cartItem.quantity,
       });
     }
 
     // ==========================================
-    // CALCULATE SHIPPING
+    // ROUND ITEMS PRICE
     // ==========================================
 
-    const shippingPrice = itemsPrice >= 100 ? 0 : 10;
+    itemsPrice = Number(
+      itemsPrice.toFixed(2)
+    );
 
     // ==========================================
-    // CALCULATE TAX
+    // SHIPPING PRICE
+    // Free shipping >= 100
+    // ==========================================
+
+    const shippingPrice =
+      itemsPrice >= 100 ? 0 : 10;
+
+    // ==========================================
+    // TAX
+    // 5%
     // ==========================================
 
     const taxPrice = Number(
@@ -170,12 +281,13 @@ export const createOrder = async (req, res) => {
 
     // ==========================================
     // DISCOUNT
+    // Coupon integration will be added later
     // ==========================================
 
     const discountPrice = 0;
 
     // ==========================================
-    // TOTAL PRICE
+    // TOTAL
     // ==========================================
 
     const totalPrice = Number(
@@ -197,22 +309,36 @@ export const createOrder = async (req, res) => {
       items: orderItems,
 
       shippingAddress: {
-        fullName,
-        phone,
-        address,
-        city,
-        state,
-        postalCode,
-        country,
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        city: city.trim(),
+        state: state?.trim() || "",
+        postalCode: postalCode.trim(),
+        country: country.trim(),
       },
 
       paymentMethod,
 
+      // Stripe payment will update this later
       paymentStatus: "pending",
+
+      paymentId: "",
 
       orderStatus: "pending",
 
-      paymentId: "",
+      // ==========================================
+      // INITIAL STATUS HISTORY
+      // ==========================================
+
+      statusHistory: [
+        {
+          status: "pending",
+          note: "Order placed",
+          updatedBy: req.user._id,
+          createdAt: new Date(),
+        },
+      ],
 
       itemsPrice,
 
@@ -224,22 +350,76 @@ export const createOrder = async (req, res) => {
 
       totalPrice,
 
-      note: note.trim(),
+      note:
+        typeof note === "string"
+          ? note.trim()
+          : "",
     });
 
     // ==========================================
-    // REDUCE PRODUCT STOCK
+    // DECREASE STOCK SAFELY
     // ==========================================
 
-    for (const item of cart.items) {
-      await Product.findByIdAndUpdate(
-        item.product._id,
-        {
-          $inc: {
-            stock: -item.quantity,
+    for (const update of stockUpdates) {
+      const updatedProduct =
+        await Product.findOneAndUpdate(
+          {
+            _id: update.productId,
+            stock: {
+              $gte: update.quantity,
+            },
           },
+          {
+            $inc: {
+              stock: -update.quantity,
+            },
+          },
+          {
+            new: true,
+          }
+        );
+
+      // ==========================================
+      // STOCK CHANGED BETWEEN CHECK & UPDATE
+      // ==========================================
+
+      if (!updatedProduct) {
+        // ----------------------------------------
+        // ROLLBACK PREVIOUS STOCK UPDATES
+        // ----------------------------------------
+
+        for (const completedUpdate of stockUpdates) {
+          if (
+            completedUpdate.productId.toString() ===
+            update.productId.toString()
+          ) {
+            break;
+          }
+
+          await Product.findByIdAndUpdate(
+            completedUpdate.productId,
+            {
+              $inc: {
+                stock: completedUpdate.quantity,
+              },
+            }
+          );
         }
-      );
+
+        // ----------------------------------------
+        // DELETE CREATED ORDER
+        // ----------------------------------------
+
+        await Order.findByIdAndDelete(
+          order._id
+        );
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "Stock changed while creating your order. Please try again.",
+        });
+      }
     }
 
     // ==========================================
@@ -254,9 +434,14 @@ export const createOrder = async (req, res) => {
     // POPULATE ORDER
     // ==========================================
 
-    await order.populate("user", "name email");
+    await order.populate(
+      "user",
+      "name email"
+    );
 
-    await order.populate("items.product");
+    await order.populate(
+      "items.product"
+    );
 
     // ==========================================
     // RESPONSE
@@ -268,7 +453,10 @@ export const createOrder = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error("Create Order Error:", error);
+    console.error(
+      "Create Order Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -284,7 +472,10 @@ export const createOrder = async (req, res) => {
 // Login Required
 // ==========================================
 
-export const getMyOrders = async (req, res) => {
+export const getMyOrders = async (
+  req,
+  res
+) => {
   try {
     const orders = await Order.find({
       user: req.user._id,
@@ -298,7 +489,10 @@ export const getMyOrders = async (req, res) => {
       orders,
     });
   } catch (error) {
-    console.error("Get My Orders Error:", error);
+    console.error(
+      "Get My Orders Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -314,15 +508,18 @@ export const getMyOrders = async (req, res) => {
 // Login Required
 // ==========================================
 
-export const getOrderById = async (req, res) => {
+export const getOrderById = async (
+  req,
+  res
+) => {
   try {
     const { orderId } = req.params;
 
     // ==========================================
-    // VALIDATE ORDER ID
+    // VALIDATE ID
     // ==========================================
 
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    if (!isValidObjectId(orderId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid order ID",
@@ -333,8 +530,13 @@ export const getOrderById = async (req, res) => {
     // FIND ORDER
     // ==========================================
 
-    const order = await Order.findById(orderId)
-      .populate("user", "name email")
+    const order = await Order.findById(
+      orderId
+    )
+      .populate(
+        "user",
+        "name email"
+      )
       .populate("items.product");
 
     if (!order) {
@@ -345,7 +547,7 @@ export const getOrderById = async (req, res) => {
     }
 
     // ==========================================
-    // USER CAN ONLY VIEW OWN ORDER
+    // CHECK OWNER
     // ==========================================
 
     if (
@@ -354,20 +556,20 @@ export const getOrderById = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to view this order",
+        message:
+          "You are not authorized to view this order",
       });
     }
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
 
     return res.status(200).json({
       success: true,
       order,
     });
   } catch (error) {
-    console.error("Get Order By ID Error:", error);
+    console.error(
+      "Get Order By ID Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -378,20 +580,23 @@ export const getOrderById = async (req, res) => {
 };
 
 // ==========================================
-// CANCEL MY ORDER
-// PUT /api/orders/:orderId/cancel
-// Login Required
+// GET ORDER TRACKING
+// GET /api/orders/:orderId/tracking
+// Customer + Admin
 // ==========================================
 
-export const cancelOrder = async (req, res) => {
+export const getOrderTracking = async (
+  req,
+  res
+) => {
   try {
     const { orderId } = req.params;
 
     // ==========================================
-    // VALIDATE ORDER ID
+    // VALIDATE ID
     // ==========================================
 
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    if (!isValidObjectId(orderId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid order ID",
@@ -402,7 +607,104 @@ export const cancelOrder = async (req, res) => {
     // FIND ORDER
     // ==========================================
 
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(
+      orderId
+    )
+      .select(
+        "_id user orderStatus statusHistory createdAt updatedAt"
+      )
+      .populate(
+        "statusHistory.updatedBy",
+        "name email role"
+      );
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // ==========================================
+    // CUSTOMER OWNERSHIP CHECK
+    // ADMIN CAN VIEW ALL
+    // ==========================================
+
+    const isAdmin =
+      req.user.role === "admin";
+
+    if (
+      !isAdmin &&
+      order.user.toString() !==
+        req.user._id.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You are not authorized to track this order",
+      });
+    }
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+      tracking: {
+        orderId: order._id,
+        currentStatus: order.orderStatus,
+        statusHistory:
+          order.statusHistory || [],
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Get Order Tracking Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while fetching order tracking",
+    });
+  }
+};
+
+// ==========================================
+// CANCEL MY ORDER
+// PUT /api/orders/:orderId/cancel
+// Login Required
+// ==========================================
+
+export const cancelOrder = async (
+  req,
+  res
+) => {
+  try {
+    const { orderId } = req.params;
+
+    // ==========================================
+    // VALIDATE ID
+    // ==========================================
+
+    if (!isValidObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID",
+      });
+    }
+
+    // ==========================================
+    // FIND ORDER
+    // ==========================================
+
+    const order = await Order.findById(
+      orderId
+    );
 
     if (!order) {
       return res.status(404).json({
@@ -431,9 +733,11 @@ export const cancelOrder = async (req, res) => {
     // ==========================================
 
     if (
-      ["shipped", "delivered", "cancelled"].includes(
-        order.orderStatus
-      )
+      [
+        "shipped",
+        "delivered",
+        "cancelled",
+      ].includes(order.orderStatus)
     ) {
       return res.status(400).json({
         success: false,
@@ -462,11 +766,34 @@ export const cancelOrder = async (req, res) => {
     // ==========================================
 
     order.orderStatus = "cancelled";
+
     order.cancelledAt = new Date();
+
+    // ==========================================
+    // ADD STATUS HISTORY
+    // ==========================================
+
+    addStatusHistory(
+      order,
+      "cancelled",
+      req.user._id,
+      "Order cancelled by customer"
+    );
 
     await order.save();
 
-    await order.populate("items.product");
+    // ==========================================
+    // POPULATE
+    // ==========================================
+
+    await order.populate(
+      "user",
+      "name email"
+    );
+
+    await order.populate(
+      "items.product"
+    );
 
     // ==========================================
     // RESPONSE
@@ -474,11 +801,15 @@ export const cancelOrder = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Order cancelled successfully",
+      message:
+        "Order cancelled successfully",
       order,
     });
   } catch (error) {
-    console.error("Cancel Order Error:", error);
+    console.error(
+      "Cancel Order Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -494,21 +825,28 @@ export const cancelOrder = async (req, res) => {
 // Admin Required
 // ==========================================
 
-export const getAllOrders = async (req, res) => {
+export const getAllOrders = async (
+  req,
+  res
+) => {
   try {
     const orders = await Order.find()
-      .populate("user", "name email role")
+      .populate(
+        "user",
+        "name email role"
+      )
       .populate("items.product")
       .sort({ createdAt: -1 });
 
     // ==========================================
-    // CALCULATE TOTAL SALES
+    // TOTAL SALES
     // ==========================================
 
     const totalSales = orders
       .filter(
         (order) =>
-          order.orderStatus !== "cancelled"
+          order.orderStatus !==
+          "cancelled"
       )
       .reduce(
         (total, order) =>
@@ -519,11 +857,16 @@ export const getAllOrders = async (req, res) => {
     return res.status(200).json({
       success: true,
       count: orders.length,
-      totalSales: Number(totalSales.toFixed(2)),
+      totalSales: Number(
+        totalSales.toFixed(2)
+      ),
       orders,
     });
   } catch (error) {
-    console.error("Get All Orders Error:", error);
+    console.error(
+      "Get All Orders Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -539,15 +882,18 @@ export const getAllOrders = async (req, res) => {
 // Admin Required
 // ==========================================
 
-export const getAdminOrderById = async (req, res) => {
+export const getAdminOrderById = async (
+  req,
+  res
+) => {
   try {
     const { orderId } = req.params;
 
     // ==========================================
-    // VALIDATE ORDER ID
+    // VALIDATE ID
     // ==========================================
 
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    if (!isValidObjectId(orderId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid order ID",
@@ -558,9 +904,18 @@ export const getAdminOrderById = async (req, res) => {
     // FIND ORDER
     // ==========================================
 
-    const order = await Order.findById(orderId)
-      .populate("user", "name email role")
-      .populate("items.product");
+    const order = await Order.findById(
+      orderId
+    )
+      .populate(
+        "user",
+        "name email role"
+      )
+      .populate("items.product")
+      .populate(
+        "statusHistory.updatedBy",
+        "name email role"
+      );
 
     if (!order) {
       return res.status(404).json({
@@ -593,16 +948,23 @@ export const getAdminOrderById = async (req, res) => {
 // Admin Required
 // ==========================================
 
-export const updateOrderStatus = async (req, res) => {
+export const updateOrderStatus = async (
+  req,
+  res
+) => {
   try {
     const { orderId } = req.params;
-    const { orderStatus } = req.body;
+
+    const {
+      orderStatus,
+      statusNote = "",
+    } = req.body;
 
     // ==========================================
-    // VALIDATE ORDER ID
+    // VALIDATE ID
     // ==========================================
 
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    if (!isValidObjectId(orderId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid order ID",
@@ -622,7 +984,11 @@ export const updateOrderStatus = async (req, res) => {
       "cancelled",
     ];
 
-    if (!allowedStatuses.includes(orderStatus)) {
+    if (
+      !allowedStatuses.includes(
+        orderStatus
+      )
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid order status",
@@ -630,10 +996,37 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     // ==========================================
+    // VALIDATE STATUS NOTE
+    // ==========================================
+
+    if (
+      statusNote &&
+      typeof statusNote !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Status note must be a string",
+      });
+    }
+
+    if (
+      typeof statusNote === "string" &&
+      statusNote.length > 300
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Status note cannot exceed 300 characters",
+      });
+    }
+
+    // ==========================================
     // FIND ORDER
     // ==========================================
 
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(
+      orderId
+    );
 
     if (!order) {
       return res.status(404).json({
@@ -643,7 +1036,7 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     // ==========================================
-    // PREVENT CHANGING CANCELLED ORDER
+    // CANCELLED ORDER CANNOT REOPEN
     // ==========================================
 
     if (
@@ -658,13 +1051,29 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     // ==========================================
-    // CANCEL ORDER
+    // ALREADY SAME STATUS
     // ==========================================
 
     if (
-      orderStatus === "cancelled" &&
-      order.orderStatus !== "cancelled"
+      order.orderStatus ===
+      orderStatus
     ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          `Order is already ${orderStatus}`,
+      });
+    }
+
+    // ==========================================
+    // CANCEL ORDER
+    // ==========================================
+
+    if (orderStatus === "cancelled") {
+      // ----------------------------------------
+      // RESTORE STOCK
+      // ----------------------------------------
+
       for (const item of order.items) {
         await Product.findByIdAndUpdate(
           item.product,
@@ -676,31 +1085,60 @@ export const updateOrderStatus = async (req, res) => {
         );
       }
 
-      order.cancelledAt = new Date();
+      order.cancelledAt =
+        new Date();
     }
 
     // ==========================================
     // DELIVERED
     // ==========================================
 
-    if (
-      orderStatus === "delivered" &&
-      order.orderStatus !== "delivered"
-    ) {
-      order.deliveredAt = new Date();
+    if (orderStatus === "delivered") {
+      order.deliveredAt =
+        new Date();
     }
 
     // ==========================================
     // UPDATE STATUS
     // ==========================================
 
-    order.orderStatus = orderStatus;
+    order.orderStatus =
+      orderStatus;
+
+    // ==========================================
+    // ADD STATUS HISTORY
+    // ==========================================
+
+    addStatusHistory(
+      order,
+      orderStatus,
+      req.user._id,
+      statusNote
+    );
+
+    // ==========================================
+    // SAVE
+    // ==========================================
 
     await order.save();
 
-    await order.populate("user", "name email");
+    // ==========================================
+    // POPULATE
+    // ==========================================
 
-    await order.populate("items.product");
+    await order.populate(
+      "user",
+      "name email"
+    );
+
+    await order.populate(
+      "items.product"
+    );
+
+    await order.populate(
+      "statusHistory.updatedBy",
+      "name email role"
+    );
 
     // ==========================================
     // RESPONSE
@@ -708,7 +1146,8 @@ export const updateOrderStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Order status updated successfully",
+      message:
+        "Order status updated successfully",
       order,
     });
   } catch (error) {
@@ -731,15 +1170,18 @@ export const updateOrderStatus = async (req, res) => {
 // Admin Required
 // ==========================================
 
-export const deleteOrder = async (req, res) => {
+export const deleteOrder = async (
+  req,
+  res
+) => {
   try {
     const { orderId } = req.params;
 
     // ==========================================
-    // VALIDATE ORDER ID
+    // VALIDATE ID
     // ==========================================
 
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    if (!isValidObjectId(orderId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid order ID",
@@ -750,7 +1192,9 @@ export const deleteOrder = async (req, res) => {
     // FIND ORDER
     // ==========================================
 
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(
+      orderId
+    );
 
     if (!order) {
       return res.status(404).json({
@@ -763,18 +1207,20 @@ export const deleteOrder = async (req, res) => {
     // DELETE ORDER
     // ==========================================
 
-    await Order.findByIdAndDelete(orderId);
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
+    await Order.findByIdAndDelete(
+      orderId
+    );
 
     return res.status(200).json({
       success: true,
-      message: "Order deleted successfully",
+      message:
+        "Order deleted successfully",
     });
   } catch (error) {
-    console.error("Delete Order Error:", error);
+    console.error(
+      "Delete Order Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
