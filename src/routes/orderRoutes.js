@@ -4,6 +4,7 @@ import {
   createOrder,
   getMyOrders,
   getOrderById,
+  getOrderTracking,
   cancelOrder,
   getAllOrders,
   getAdminOrderById,
@@ -92,6 +93,18 @@ router.delete(
   protect,
   authorizeRoles("admin"),
   deleteOrder
+);
+
+// ==========================================
+// ORDER TRACKING
+// GET /api/orders/:orderId/tracking
+// Customer + Admin
+// ==========================================
+
+router.get(
+  "/:orderId/tracking",
+  protect,
+  getOrderTracking
 );
 
 // ==========================================
