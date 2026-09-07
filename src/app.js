@@ -17,6 +17,7 @@ import reviewRoutes from "./routes/reviewRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
 
 // ==========================================
 // APP
@@ -30,7 +31,9 @@ const app = express();
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin:
+      process.env.CLIENT_URL ||
+      "http://localhost:5173",
     credentials: true,
   })
 );
@@ -92,6 +95,12 @@ app.use("/api/inventory", inventoryRoutes);
 // ==========================================
 
 app.use("/api/coupons", couponRoutes);
+
+// ==========================================
+// PAYMENT ROUTES
+// ==========================================
+
+app.use("/api/payments", paymentRoutes);
 
 // ==========================================
 // TEST ROUTE
