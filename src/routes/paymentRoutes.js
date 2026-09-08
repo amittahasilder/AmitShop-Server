@@ -3,6 +3,7 @@ import express from "express";
 import {
   createCheckoutSession,
   getCheckoutSession,
+  stripeWebhook,
 } from "../controllers/paymentController.js";
 
 import {
@@ -12,7 +13,21 @@ import {
 const router = express.Router();
 
 // ==========================================
-// CREATE STRIPE CHECKOUT SESSION
+// STRIPE WEBHOOK
+// IMPORTANT:
+// Webhook MUST receive RAW BODY
+// ==========================================
+
+router.post(
+  "/webhook",
+  express.raw({
+    type: "application/json",
+  }),
+  stripeWebhook
+);
+
+// ==========================================
+// CREATE CHECKOUT SESSION
 // POST /api/payments/create-checkout-session
 // Login Required
 // ==========================================
@@ -24,7 +39,7 @@ router.post(
 );
 
 // ==========================================
-// GET STRIPE CHECKOUT SESSION
+// GET CHECKOUT SESSION
 // GET /api/payments/session/:sessionId
 // Login Required
 // ==========================================

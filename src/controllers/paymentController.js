@@ -328,3 +328,242 @@ export const getCheckoutSession = async (
     });
   }
 };
+
+// ==========================================
+// STRIPE WEBHOOK
+// POST /api/payments/webhook
+// Stripe Only
+// ==========================================
+
+export const stripeWebhook = async (req, res) => {
+  const signature =
+    req.headers["stripe-signature"];
+
+  // ==========================================
+  // CHECK SIGNATURE
+  // ==========================================
+
+  if (!signature) {
+    return res.status(400).json({
+      success: false,
+      message: "Stripe signature is missing",
+    });
+  }
+
+  let event;
+
+  // ==========================================
+  // VERIFY STRIPE WEBHOOK
+  // ==========================================
+
+  try {
+    event =
+      stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+  } catch (error) {
+    console.error(
+      "Stripe Webhook Signature Error:",
+      error.message
+    );
+
+    return res.status(400).json({
+      success: false,
+      message: "Invalid Stripe webhook signature",
+    });
+  }
+
+  // ==========================================
+  // PROCESS EVENT
+  // ==========================================
+
+  try {
+    // ==========================================
+    // CHECKOUT COMPLETED
+    // ==========================================
+
+    if (
+      event.type ===
+      "checkout.session.completed"
+    ) {
+      const session = event.data.object;
+
+      const orderId =
+        session.metadata?.orderId;
+
+      // ==========================================
+      // CHECK ORDER ID
+      // ==========================================
+
+      if (!orderId) {
+        console.error(
+          "Stripe Webhook: Order ID missing from metadata"
+        );
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "Order ID missing from Stripe metadata",
+        });
+      }
+
+      // ==========================================
+      // FIND ORDER
+      // ==========================================
+
+      const order =
+        await Order.findById(orderId);
+
+      if (!order) {
+        console.error(
+          `Stripe Webhook: Order not found: ${orderId}`
+        );
+
+        return res.status(404).json({
+          success: false,
+          message: "Order not found",
+        });
+      }
+
+      // ==========================================
+      // PAYMENT SUCCESS
+      // ==========================================
+
+      if (
+        session.payment_status === "paid"
+      ) {
+        // Prevent duplicate webhook processing
+        if (
+          order.paymentStatus !== "paid"
+        ) {
+          order.paymentStatus = "paid";
+
+          order.paymentId =
+            session.payment_intent?.toString() ||
+            session.id;
+
+          order.paidAt = new Date();
+
+          // ==========================================
+          // CONFIRM ORDER
+          // ==========================================
+
+          if (
+            order.orderStatus === "pending"
+          ) {
+            order.orderStatus =
+              "confirmed";
+
+            order.statusHistory.push({
+              status: "confirmed",
+
+              note:
+                "Payment received and order confirmed",
+
+              updatedBy: null,
+
+              createdAt: new Date(),
+            });
+          }
+
+          await order.save();
+
+          console.log(
+            `✅ Stripe payment successful for order: ${order._id}`
+          );
+        } else {
+          console.log(
+            `ℹ️ Stripe webhook already processed for order: ${order._id}`
+          );
+        }
+      }
+    }
+
+    // ==========================================
+    // ASYNC PAYMENT FAILED
+    // ==========================================
+
+    if (
+      event.type ===
+      "checkout.session.async_payment_failed"
+    ) {
+      const session = event.data.object;
+
+      const orderId =
+        session.metadata?.orderId;
+
+      if (orderId) {
+        const order =
+          await Order.findById(orderId);
+
+        if (
+          order &&
+          order.paymentStatus !== "paid"
+        ) {
+          order.paymentStatus =
+            "failed";
+
+          await order.save();
+
+          console.log(
+            `❌ Stripe payment failed for order: ${order._id}`
+          );
+        }
+      }
+    }
+
+    // ==========================================
+    // CHECKOUT SESSION EXPIRED
+    // ==========================================
+
+    if (
+      event.type ===
+      "checkout.session.expired"
+    ) {
+      const session = event.data.object;
+
+      const orderId =
+        session.metadata?.orderId;
+
+      if (orderId) {
+        const order =
+          await Order.findById(orderId);
+
+        if (
+          order &&
+          order.paymentStatus !== "paid"
+        ) {
+          order.paymentStatus =
+            "failed";
+
+          await order.save();
+
+          console.log(
+            `⚠️ Stripe checkout expired for order: ${order._id}`
+          );
+        }
+      }
+    }
+
+    // ==========================================
+    // STRIPE RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      received: true,
+    });
+  } catch (error) {
+    console.error(
+      "Stripe Webhook Processing Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while processing Stripe webhook",
+    });
+  }
+};
