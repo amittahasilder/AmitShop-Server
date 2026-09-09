@@ -1231,7 +1231,6 @@
 // };
 
 
-
 import mongoose from "mongoose";
 
 import Order from "../models/Order.js";
@@ -1298,7 +1297,9 @@ const addStatusHistory = (
 ) => {
   order.statusHistory.push({
     status,
-    note: note?.trim() || getDefaultStatusNote(status),
+    note:
+      note?.trim() ||
+      getDefaultStatusNote(status),
     updatedBy: updatedBy || null,
     createdAt: new Date(),
   });
@@ -1373,7 +1374,11 @@ export const createOrder = async (req, res) => {
       user: req.user._id,
     }).populate("items.product");
 
-    if (!cart || !cart.items || cart.items.length === 0) {
+    if (
+      !cart ||
+      !cart.items ||
+      cart.items.length === 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "Your cart is empty",
@@ -1394,9 +1399,9 @@ export const createOrder = async (req, res) => {
     // ==========================================
 
     for (const cartItem of cart.items) {
-      // ------------------------------------------
+      // ==========================================
       // CHECK PRODUCT EXISTS
-      // ------------------------------------------
+      // ==========================================
 
       if (!cartItem.product) {
         return res.status(404).json({
@@ -1408,11 +1413,13 @@ export const createOrder = async (req, res) => {
 
       const productId = cartItem.product._id;
 
-      // ------------------------------------------
+      // ==========================================
       // FETCH LATEST PRODUCT
-      // ------------------------------------------
+      // ==========================================
 
-      const product = await Product.findById(productId);
+      const product = await Product.findById(
+        productId
+      );
 
       if (!product) {
         return res.status(404).json({
@@ -1422,9 +1429,9 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      // ------------------------------------------
+      // ==========================================
       // CHECK ACTIVE
-      // ------------------------------------------
+      // ==========================================
 
       if (!product.isActive) {
         return res.status(400).json({
@@ -1433,9 +1440,9 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      // ------------------------------------------
+      // ==========================================
       // VALIDATE QUANTITY
-      // ------------------------------------------
+      // ==========================================
 
       if (
         !Number.isInteger(cartItem.quantity) ||
@@ -1447,31 +1454,35 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      // ------------------------------------------
+      // ==========================================
       // CHECK STOCK
-      // ------------------------------------------
+      // ==========================================
 
-      if (product.stock < cartItem.quantity) {
+      if (
+        product.stock <
+        cartItem.quantity
+      ) {
         return res.status(400).json({
           success: false,
           message: `Only ${product.stock} item(s) available for ${product.name}`,
         });
       }
 
-      // ------------------------------------------
+      // ==========================================
       // CALCULATE PRICE
-      // ------------------------------------------
+      // ==========================================
 
-      const itemPrice = getProductPrice(product);
+      const itemPrice =
+        getProductPrice(product);
 
       const itemTotal =
         itemPrice * cartItem.quantity;
 
       itemsPrice += itemTotal;
 
-      // ------------------------------------------
+      // ==========================================
       // ORDER ITEM SNAPSHOT
-      // ------------------------------------------
+      // ==========================================
 
       orderItems.push({
         product: product._id,
@@ -1485,9 +1496,9 @@ export const createOrder = async (req, res) => {
         quantity: cartItem.quantity,
       });
 
-      // ------------------------------------------
+      // ==========================================
       // PREPARE STOCK UPDATE
-      // ------------------------------------------
+      // ==========================================
 
       stockUpdates.push({
         productId: product._id,
@@ -1505,7 +1516,7 @@ export const createOrder = async (req, res) => {
 
     // ==========================================
     // SHIPPING PRICE
-    // Free shipping >= 100
+    // FREE SHIPPING >= $100
     // ==========================================
 
     const shippingPrice =
@@ -1522,13 +1533,13 @@ export const createOrder = async (req, res) => {
 
     // ==========================================
     // DISCOUNT
-    // Coupon integration will be added later
+    // COUPON INTEGRATION LATER
     // ==========================================
 
     const discountPrice = 0;
 
     // ==========================================
-    // TOTAL
+    // TOTAL PRICE
     // ==========================================
 
     const totalPrice = Number(
@@ -1581,13 +1592,9 @@ export const createOrder = async (req, res) => {
       ],
 
       itemsPrice,
-
       shippingPrice,
-
       taxPrice,
-
       discountPrice,
-
       totalPrice,
 
       note:
@@ -1599,6 +1606,8 @@ export const createOrder = async (req, res) => {
     // ==========================================
     // DECREASE STOCK SAFELY
     // ==========================================
+
+    const completedStockUpdates = [];
 
     for (const update of stockUpdates) {
       const updatedProduct =
@@ -1620,22 +1629,15 @@ export const createOrder = async (req, res) => {
         );
 
       // ==========================================
-      // STOCK CHANGED BETWEEN CHECK & UPDATE
+      // STOCK UPDATE FAILED
       // ==========================================
 
       if (!updatedProduct) {
-        // ----------------------------------------
-        // ROLLBACK PREVIOUS STOCK UPDATES
-        // ----------------------------------------
+        // ========================================
+        // ROLLBACK COMPLETED STOCK UPDATES
+        // ========================================
 
-        for (const completedUpdate of stockUpdates) {
-          if (
-            completedUpdate.productId.toString() ===
-            update.productId.toString()
-          ) {
-            break;
-          }
-
+        for (const completedUpdate of completedStockUpdates) {
           await Product.findByIdAndUpdate(
             completedUpdate.productId,
             {
@@ -1646,9 +1648,9 @@ export const createOrder = async (req, res) => {
           );
         }
 
-        // ----------------------------------------
+        // ========================================
         // DELETE CREATED ORDER
-        // ----------------------------------------
+        // ========================================
 
         await Order.findByIdAndDelete(
           order._id
@@ -1660,6 +1662,8 @@ export const createOrder = async (req, res) => {
             "Stock changed while creating your order. Please try again.",
         });
       }
+
+      completedStockUpdates.push(update);
     }
 
     // ==========================================
@@ -2055,7 +2059,7 @@ export const cancelOrder = async (
     );
 
     // ==========================================
-    // SEND ORDER CANCELLED EMAIL
+    // SEND CANCELLED EMAIL
     // ==========================================
 
     try {
@@ -2063,6 +2067,7 @@ export const cancelOrder = async (
         to: order.user.email,
         name: order.user.name,
         orderId: order._id.toString(),
+        totalPrice: order.totalPrice,
       });
     } catch (emailError) {
       console.error(
@@ -2281,7 +2286,8 @@ export const updateOrderStatus = async (
     ) {
       return res.status(400).json({
         success: false,
-        message: "Status note must be a string",
+        message:
+          "Status note must be a string",
       });
     }
 
@@ -2346,9 +2352,9 @@ export const updateOrderStatus = async (
     // ==========================================
 
     if (orderStatus === "cancelled") {
-      // ----------------------------------------
+      // ========================================
       // RESTORE STOCK
-      // ----------------------------------------
+      // ========================================
 
       for (const item of order.items) {
         await Product.findByIdAndUpdate(
@@ -2421,9 +2427,9 @@ export const updateOrderStatus = async (
     // ==========================================
 
     try {
-      // ----------------------------------------
+      // ========================================
       // SHIPPED EMAIL
-      // ----------------------------------------
+      // ========================================
 
       if (orderStatus === "shipped") {
         await sendOrderShippedEmail({
@@ -2433,9 +2439,9 @@ export const updateOrderStatus = async (
         });
       }
 
-      // ----------------------------------------
+      // ========================================
       // DELIVERED EMAIL
-      // ----------------------------------------
+      // ========================================
 
       if (orderStatus === "delivered") {
         await sendOrderDeliveredEmail({
@@ -2445,15 +2451,16 @@ export const updateOrderStatus = async (
         });
       }
 
-      // ----------------------------------------
+      // ========================================
       // CANCELLED EMAIL
-      // ----------------------------------------
+      // ========================================
 
       if (orderStatus === "cancelled") {
         await sendOrderCancelledEmail({
           to: order.user.email,
           name: order.user.name,
           orderId: order._id.toString(),
+          totalPrice: order.totalPrice,
         });
       }
     } catch (emailError) {
@@ -2533,6 +2540,10 @@ export const deleteOrder = async (
     await Order.findByIdAndDelete(
       orderId
     );
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
 
     return res.status(200).json({
       success: true,

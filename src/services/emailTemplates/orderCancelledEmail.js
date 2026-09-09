@@ -307,4 +307,4 @@ AmitShop Team
     text,
     html,
   };
-};
+}; 
