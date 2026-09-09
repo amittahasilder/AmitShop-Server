@@ -115,19 +115,27 @@ export const getAdminDashboard = async (req, res) => {
           totalSales: {
             $sum: "$totalPrice",
           },
+          totalSaleOrders: {
+            $sum: 1,
+          },
         },
       },
     ]);
 
     const totalSales =
       salesResult.length > 0
-        ? salesResult[0].totalSales
+        ? Number(salesResult[0].totalSales || 0)
+        : 0;
+
+    const totalSaleOrders =
+      salesResult.length > 0
+        ? salesResult[0].totalSaleOrders || 0
         : 0;
 
     const averageOrderValue =
-      totalOrders > 0
+      totalSaleOrders > 0
         ? Number(
-            (totalSales / totalOrders).toFixed(2)
+            (totalSales / totalSaleOrders).toFixed(2)
           )
         : 0;
 
@@ -139,6 +147,10 @@ export const getAdminDashboard = async (req, res) => {
       .populate(
         "user",
         "_id name email"
+      )
+      .populate(
+        "items.product",
+        "_id name slug price images"
       )
       .sort({
         createdAt: -1,
@@ -233,13 +245,12 @@ export const getAllUsers = async (req, res) => {
       sort = "-createdAt",
     } = req.query;
 
-    // ==========================================
-    // QUERY
-    // ==========================================
-
     const query = {};
 
-    // Search by name/email
+    // ==========================================
+    // SEARCH
+    // ==========================================
+
     if (search.trim()) {
       query.$or = [
         {
@@ -257,7 +268,10 @@ export const getAllUsers = async (req, res) => {
       ];
     }
 
-    // Role filter
+    // ==========================================
+    // ROLE FILTER
+    // ==========================================
+
     if (role) {
       const allowedRoles = [
         "customer",
@@ -270,7 +284,10 @@ export const getAllUsers = async (req, res) => {
       }
     }
 
-    // Status filter
+    // ==========================================
+    // STATUS FILTER
+    // ==========================================
+
     if (status === "active") {
       query.isActive = true;
     }
@@ -360,10 +377,6 @@ export const getUserById = async (
   try {
     const { id } = req.params;
 
-    // ==========================================
-    // VALIDATE ID
-    // ==========================================
-
     if (
       !mongoose.Types.ObjectId.isValid(id)
     ) {
@@ -372,10 +385,6 @@ export const getUserById = async (
         message: "Invalid user ID",
       });
     }
-
-    // ==========================================
-    // FIND USER
-    // ==========================================
 
     const user =
       await User.findById(id).select(
@@ -388,10 +397,6 @@ export const getUserById = async (
         message: "User not found",
       });
     }
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
 
     return res.status(200).json({
       success: true,
@@ -431,10 +436,6 @@ export const updateUser = async (
       avatar,
     } = req.body;
 
-    // ==========================================
-    // VALIDATE ID
-    // ==========================================
-
     if (
       !mongoose.Types.ObjectId.isValid(id)
     ) {
@@ -443,10 +444,6 @@ export const updateUser = async (
         message: "Invalid user ID",
       });
     }
-
-    // ==========================================
-    // FIND USER
-    // ==========================================
 
     const user =
       await User.findById(id);
@@ -459,7 +456,7 @@ export const updateUser = async (
     }
 
     // ==========================================
-    // PREVENT ADMIN SELF-DEACTIVATION
+    // PREVENT SELF DEACTIVATION
     // ==========================================
 
     if (
@@ -474,7 +471,7 @@ export const updateUser = async (
     }
 
     // ==========================================
-    // PREVENT ADMIN SELF ROLE CHANGE
+    // PREVENT SELF ROLE CHANGE
     // ==========================================
 
     if (
@@ -490,7 +487,7 @@ export const updateUser = async (
     }
 
     // ==========================================
-    // UPDATE NAME
+    // NAME
     // ==========================================
 
     if (name !== undefined) {
@@ -517,7 +514,7 @@ export const updateUser = async (
     }
 
     // ==========================================
-    // UPDATE ROLE
+    // ROLE
     // ==========================================
 
     if (role !== undefined) {
@@ -541,7 +538,7 @@ export const updateUser = async (
     }
 
     // ==========================================
-    // UPDATE ACTIVE STATUS
+    // ACTIVE STATUS
     // ==========================================
 
     if (isActive !== undefined) {
@@ -559,7 +556,7 @@ export const updateUser = async (
     }
 
     // ==========================================
-    // UPDATE AVATAR
+    // AVATAR
     // ==========================================
 
     if (avatar !== undefined) {
@@ -573,10 +570,6 @@ export const updateUser = async (
 
     await user.save();
 
-    // ==========================================
-    // SAFE USER
-    // ==========================================
-
     const safeUser = {
       _id: user._id,
       name: user.name,
@@ -587,10 +580,6 @@ export const updateUser = async (
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
 
     return res.status(200).json({
       success: true,
@@ -625,10 +614,6 @@ export const deleteUser = async (
   try {
     const { id } = req.params;
 
-    // ==========================================
-    // VALIDATE ID
-    // ==========================================
-
     if (
       !mongoose.Types.ObjectId.isValid(id)
     ) {
@@ -652,10 +637,6 @@ export const deleteUser = async (
       });
     }
 
-    // ==========================================
-    // FIND USER
-    // ==========================================
-
     const user =
       await User.findById(id);
 
@@ -666,15 +647,7 @@ export const deleteUser = async (
       });
     }
 
-    // ==========================================
-    // DELETE USER
-    // ==========================================
-
     await User.findByIdAndDelete(id);
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
 
     return res.status(200).json({
       success: true,
@@ -716,13 +689,12 @@ export const getAllAdminProducts = async (
       sort = "-createdAt",
     } = req.query;
 
-    // ==========================================
-    // QUERY
-    // ==========================================
-
     const query = {};
 
-    // Search
+    // ==========================================
+    // SEARCH
+    // ==========================================
+
     if (search.trim()) {
       query.$or = [
         {
@@ -746,17 +718,26 @@ export const getAllAdminProducts = async (
       ];
     }
 
-    // Category
+    // ==========================================
+    // CATEGORY
+    // ==========================================
+
     if (category) {
       query.category = category;
     }
 
-    // Brand
+    // ==========================================
+    // BRAND
+    // ==========================================
+
     if (brand) {
       query.brand = brand;
     }
 
-    // Active / inactive
+    // ==========================================
+    // STATUS
+    // ==========================================
+
     if (status === "active") {
       query.isActive = true;
     }
@@ -782,10 +763,6 @@ export const getAllAdminProducts = async (
     const skip =
       (currentPage - 1) * perPage;
 
-    // ==========================================
-    // TOTAL
-    // ==========================================
-
     const total =
       await Product.countDocuments(query);
 
@@ -802,10 +779,6 @@ export const getAllAdminProducts = async (
         .sort(sort)
         .skip(skip)
         .limit(perPage);
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
 
     return res.status(200).json({
       success: true,
@@ -848,10 +821,6 @@ export const getAdminProductById = async (
   try {
     const { id } = req.params;
 
-    // ==========================================
-    // VALIDATE ID
-    // ==========================================
-
     if (
       !mongoose.Types.ObjectId.isValid(id)
     ) {
@@ -860,10 +829,6 @@ export const getAdminProductById = async (
         message: "Invalid product ID",
       });
     }
-
-    // ==========================================
-    // FIND PRODUCT
-    // ==========================================
 
     const product =
       await Product.findById(id).populate(
@@ -877,10 +842,6 @@ export const getAdminProductById = async (
         message: "Product not found",
       });
     }
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
 
     return res.status(200).json({
       success: true,
@@ -912,10 +873,6 @@ export const updateAdminProductStatus =
       const { id } = req.params;
       const { isActive } = req.body;
 
-      // ==========================================
-      // VALIDATE ID
-      // ==========================================
-
       if (
         !mongoose.Types.ObjectId.isValid(id)
       ) {
@@ -924,10 +881,6 @@ export const updateAdminProductStatus =
           message: "Invalid product ID",
         });
       }
-
-      // ==========================================
-      // VALIDATE STATUS
-      // ==========================================
 
       if (
         typeof isActive !== "boolean"
@@ -939,10 +892,6 @@ export const updateAdminProductStatus =
         });
       }
 
-      // ==========================================
-      // FIND PRODUCT
-      // ==========================================
-
       const product =
         await Product.findById(id);
 
@@ -953,17 +902,9 @@ export const updateAdminProductStatus =
         });
       }
 
-      // ==========================================
-      // UPDATE
-      // ==========================================
-
       product.isActive = isActive;
 
       await product.save();
-
-      // ==========================================
-      // RESPONSE
-      // ==========================================
 
       return res.status(200).json({
         success: true,
@@ -985,3 +926,982 @@ export const updateAdminProductStatus =
       });
     }
   };
+
+// ============================================================
+// GET ALL ADMIN ORDERS
+// GET /api/admin/orders
+// Admin Only
+// ============================================================
+
+export const getAllAdminOrders = async (
+  req,
+  res
+) => {
+  try {
+    const {
+      search = "",
+      status,
+      paymentStatus,
+      paymentMethod,
+      page = 1,
+      limit = 20,
+      sort = "-createdAt",
+    } = req.query;
+
+    const query = {};
+
+    // ==========================================
+    // SEARCH USER / PAYMENT ID
+    // ==========================================
+
+    if (search.trim()) {
+      const searchValue =
+        search.trim();
+
+      const users =
+        await User.find({
+          $or: [
+            {
+              name: {
+                $regex: searchValue,
+                $options: "i",
+              },
+            },
+            {
+              email: {
+                $regex: searchValue,
+                $options: "i",
+              },
+            },
+          ],
+        }).select("_id");
+
+      const userIds = users.map(
+        (user) => user._id
+      );
+
+      const orConditions = [];
+
+      if (userIds.length > 0) {
+        orConditions.push({
+          user: {
+            $in: userIds,
+          },
+        });
+      }
+
+      orConditions.push({
+        paymentId: {
+          $regex: searchValue,
+          $options: "i",
+        },
+      });
+
+      // Search by ObjectId if valid
+      if (
+        mongoose.Types.ObjectId.isValid(
+          searchValue
+        )
+      ) {
+        orConditions.push({
+          _id: searchValue,
+        });
+      }
+
+      query.$or = orConditions;
+    }
+
+    // ==========================================
+    // ORDER STATUS
+    // ==========================================
+
+    if (status) {
+      const allowedStatuses = [
+        "pending",
+        "confirmed",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ];
+
+      if (
+        allowedStatuses.includes(status)
+      ) {
+        query.orderStatus = status;
+      }
+    }
+
+    // ==========================================
+    // PAYMENT STATUS
+    // ==========================================
+
+    if (paymentStatus) {
+      const allowedPaymentStatuses = [
+        "pending",
+        "paid",
+        "failed",
+        "refunded",
+      ];
+
+      if (
+        allowedPaymentStatuses.includes(
+          paymentStatus
+        )
+      ) {
+        query.paymentStatus =
+          paymentStatus;
+      }
+    }
+
+    // ==========================================
+    // PAYMENT METHOD
+    // ==========================================
+
+    if (paymentMethod) {
+      const allowedPaymentMethods = [
+        "COD",
+        "STRIPE",
+      ];
+
+      if (
+        allowedPaymentMethods.includes(
+          paymentMethod
+        )
+      ) {
+        query.paymentMethod =
+          paymentMethod;
+      }
+    }
+
+    // ==========================================
+    // PAGINATION
+    // ==========================================
+
+    const currentPage = Math.max(
+      Number(page) || 1,
+      1
+    );
+
+    const perPage = Math.min(
+      Math.max(Number(limit) || 20, 1),
+      100
+    );
+
+    const skip =
+      (currentPage - 1) * perPage;
+
+    // ==========================================
+    // TOTAL
+    // ==========================================
+
+    const total =
+      await Order.countDocuments(query);
+
+    // ==========================================
+    // ORDERS
+    // ==========================================
+
+    const orders = await Order.find(query)
+      .populate(
+        "user",
+        "_id name email"
+      )
+      .populate(
+        "items.product",
+        "_id name slug price images seller"
+      )
+      .sort(sort)
+      .skip(skip)
+      .limit(perPage);
+
+    return res.status(200).json({
+      success: true,
+
+      orders,
+
+      pagination: {
+        page: currentPage,
+        limit: perPage,
+        total,
+        totalPages: Math.ceil(
+          total / perPage
+        ),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Get All Admin Orders Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while fetching admin orders",
+    });
+  }
+};
+
+// ============================================================
+// GET SINGLE ADMIN ORDER
+// GET /api/admin/orders/:id
+// Admin Only
+// ============================================================
+
+export const getAdminOrderById = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID",
+      });
+    }
+
+    const order =
+      await Order.findById(id)
+        .populate(
+          "user",
+          "_id name email"
+        )
+        .populate(
+          "items.product",
+          "_id name slug price images seller"
+        );
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      order,
+    });
+  } catch (error) {
+    console.error(
+      "Get Admin Order By ID Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while fetching order",
+    });
+  }
+};
+
+// ============================================================
+// UPDATE ADMIN ORDER STATUS
+// PATCH /api/admin/orders/:id/status
+// Admin Only
+// ============================================================
+
+export const updateAdminOrderStatus = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+    const { status, note } = req.body;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID",
+      });
+    }
+
+    // ==========================================
+    // VALID STATUS
+    // ==========================================
+
+    const allowedStatuses = [
+      "pending",
+      "confirmed",
+      "processing",
+      "shipped",
+      "delivered",
+      "cancelled",
+    ];
+
+    if (
+      !allowedStatuses.includes(status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid order status",
+      });
+    }
+
+    // ==========================================
+    // FIND ORDER
+    // ==========================================
+
+    const order =
+      await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // ==========================================
+    // PREVENT REOPEN CANCELLED ORDER
+    // ==========================================
+
+    if (
+      order.orderStatus === "cancelled" &&
+      status !== "cancelled"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cancelled order cannot be reopened",
+      });
+    }
+
+    // ==========================================
+    // STATUS HISTORY
+    // ==========================================
+
+    if (
+      !Array.isArray(
+        order.statusHistory
+      )
+    ) {
+      order.statusHistory = [];
+    }
+
+    order.statusHistory.push({
+      status,
+      note:
+        note?.trim() ||
+        `Order status changed to ${status}`,
+      changedAt: new Date(),
+    });
+
+    // ==========================================
+    // UPDATE STATUS
+    // ==========================================
+
+    order.orderStatus = status;
+
+    // ==========================================
+    // DELIVERED
+    // ==========================================
+
+    if (status === "delivered") {
+      order.deliveredAt =
+        order.deliveredAt ||
+        new Date();
+    }
+
+    // ==========================================
+    // CANCELLED
+    // ==========================================
+
+    if (status === "cancelled") {
+      order.cancelledAt =
+        order.cancelledAt ||
+        new Date();
+    }
+
+    await order.save();
+
+    // ==========================================
+    // POPULATE
+    // ==========================================
+
+    await order.populate([
+      {
+        path: "user",
+        select: "_id name email",
+      },
+      {
+        path: "items.product",
+        select:
+          "_id name slug price images seller",
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Order status updated successfully",
+      order,
+    });
+  } catch (error) {
+    console.error(
+      "Update Admin Order Status Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while updating order status",
+    });
+  }
+};
+
+// ============================================================
+// UPDATE ADMIN PAYMENT STATUS
+// PATCH /api/admin/orders/:id/payment-status
+// Admin Only
+// ============================================================
+
+export const updateAdminPaymentStatus =
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { paymentStatus } = req.body;
+
+      if (
+        !mongoose.Types.ObjectId.isValid(id)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid order ID",
+        });
+      }
+
+      const allowedStatuses = [
+        "pending",
+        "paid",
+        "failed",
+        "refunded",
+      ];
+
+      if (
+        !allowedStatuses.includes(
+          paymentStatus
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid payment status",
+        });
+      }
+
+      const order =
+        await Order.findById(id);
+
+      if (!order) {
+        return res.status(404).json({
+          success: false,
+          message: "Order not found",
+        });
+      }
+
+      order.paymentStatus =
+        paymentStatus;
+
+      if (paymentStatus === "paid") {
+        order.paidAt =
+          order.paidAt ||
+          new Date();
+      }
+
+      await order.save();
+
+      await order.populate([
+        {
+          path: "user",
+          select: "_id name email",
+        },
+        {
+          path: "items.product",
+          select:
+            "_id name slug price images seller",
+        },
+      ]);
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Payment status updated successfully",
+        order,
+      });
+    } catch (error) {
+      console.error(
+        "Update Admin Payment Status Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Something went wrong while updating payment status",
+      });
+    }
+  };
+
+// ============================================================
+// DELETE ADMIN ORDER
+// DELETE /api/admin/orders/:id
+// Admin Only
+// ============================================================
+
+export const deleteAdminOrder = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID",
+      });
+    }
+
+    const order =
+      await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    await Order.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Order deleted successfully",
+    });
+  } catch (error) {
+    console.error(
+      "Delete Admin Order Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while deleting order",
+    });
+  }
+};
+
+// ============================================================
+// ADMIN SALES & ANALYTICS
+// GET /api/admin/analytics
+// Admin Only
+// ============================================================
+
+export const getAdminAnalytics = async (
+  req,
+  res
+) => {
+  try {
+    const {
+      period = 30,
+    } = req.query;
+
+    // ==========================================
+    // VALIDATE PERIOD
+    // ==========================================
+
+    const allowedPeriods = [
+      7,
+      30,
+      90,
+      180,
+      365,
+    ];
+
+    const selectedPeriod =
+      Number(period);
+
+    if (
+      !allowedPeriods.includes(
+        selectedPeriod
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid period. Allowed periods: 7, 30, 90, 180, 365",
+      });
+    }
+
+    // ==========================================
+    // DATE RANGE
+    // ==========================================
+
+    const startDate = new Date();
+
+    startDate.setDate(
+      startDate.getDate() -
+        selectedPeriod
+    );
+
+    // ==========================================
+    // COMMON MATCH
+    // ==========================================
+
+    const match = {
+      createdAt: {
+        $gte: startDate,
+      },
+      orderStatus: {
+        $ne: "cancelled",
+      },
+      paymentStatus: {
+        $nin: [
+          "failed",
+          "refunded",
+        ],
+      },
+    };
+
+    // ==========================================
+    // SUMMARY
+    // ==========================================
+
+    const summaryResult =
+      await Order.aggregate([
+        {
+          $match: match,
+        },
+        {
+          $group: {
+            _id: null,
+
+            totalRevenue: {
+              $sum: "$totalPrice",
+            },
+
+            totalOrders: {
+              $sum: 1,
+            },
+
+            averageOrderValue: {
+              $avg: "$totalPrice",
+            },
+          },
+        },
+      ]);
+
+    const summary =
+      summaryResult.length > 0
+        ? summaryResult[0]
+        : {
+            totalRevenue: 0,
+            totalOrders: 0,
+            averageOrderValue: 0,
+          };
+
+    // ==========================================
+    // DAILY SALES
+    // ==========================================
+
+    const dailySales =
+      await Order.aggregate([
+        {
+          $match: match,
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$createdAt",
+              },
+            },
+
+            revenue: {
+              $sum: "$totalPrice",
+            },
+
+            orders: {
+              $sum: 1,
+            },
+          },
+        },
+        {
+          $sort: {
+            _id: 1,
+          },
+        },
+      ]);
+
+    // ==========================================
+    // PAYMENT METHOD BREAKDOWN
+    // ==========================================
+
+    const paymentMethods =
+      await Order.aggregate([
+        {
+          $match: match,
+        },
+        {
+          $group: {
+            _id: "$paymentMethod",
+
+            totalOrders: {
+              $sum: 1,
+            },
+
+            totalRevenue: {
+              $sum: "$totalPrice",
+            },
+          },
+        },
+        {
+          $sort: {
+            totalRevenue: -1,
+          },
+        },
+      ]);
+
+    // ==========================================
+    // ORDER STATUS BREAKDOWN
+    // ==========================================
+
+    const orderStatuses =
+      await Order.aggregate([
+        {
+          $match: {
+            createdAt: {
+              $gte: startDate,
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$orderStatus",
+
+            count: {
+              $sum: 1,
+            },
+          },
+        },
+        {
+          $sort: {
+            count: -1,
+          },
+        },
+      ]);
+
+    // ==========================================
+    // TOP PRODUCTS
+    // ==========================================
+
+    const topProducts =
+      await Order.aggregate([
+        {
+          $match: match,
+        },
+        {
+          $unwind: "$items",
+        },
+        {
+          $group: {
+            _id: "$items.product",
+
+            quantitySold: {
+              $sum: "$items.quantity",
+            },
+
+            revenue: {
+              $sum: {
+                $multiply: [
+                  "$items.price",
+                  "$items.quantity",
+                ],
+              },
+            },
+          },
+        },
+        {
+          $sort: {
+            revenue: -1,
+          },
+        },
+        {
+          $limit: 10,
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "_id",
+            foreignField: "_id",
+            as: "product",
+          },
+        },
+        {
+          $unwind: {
+            path: "$product",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            quantitySold: 1,
+            revenue: 1,
+
+            product: {
+              _id: "$product._id",
+              name: "$product.name",
+              slug: "$product.slug",
+              images: "$product.images",
+              price: "$product.price",
+            },
+          },
+        },
+      ]);
+
+    // ==========================================
+    // TOP SELLERS
+    // ==========================================
+
+    const topSellers =
+      await Order.aggregate([
+        {
+          $match: match,
+        },
+        {
+          $unwind: "$items",
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField:
+              "items.product",
+            foreignField: "_id",
+            as: "product",
+          },
+        },
+        {
+          $unwind: "$product",
+        },
+        {
+          $group: {
+            _id: "$product.seller",
+
+            quantitySold: {
+              $sum: "$items.quantity",
+            },
+
+            revenue: {
+              $sum: {
+                $multiply: [
+                  "$items.price",
+                  "$items.quantity",
+                ],
+              },
+            },
+          },
+        },
+        {
+          $sort: {
+            revenue: -1,
+          },
+        },
+        {
+          $limit: 10,
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "_id",
+            foreignField: "_id",
+            as: "seller",
+          },
+        },
+        {
+          $unwind: {
+            path: "$seller",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            quantitySold: 1,
+            revenue: 1,
+
+            seller: {
+              _id: "$seller._id",
+              name: "$seller.name",
+              email: "$seller.email",
+            },
+          },
+        },
+      ]);
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+
+      period: selectedPeriod,
+
+      dateRange: {
+        startDate,
+        endDate: new Date(),
+      },
+
+      summary: {
+        totalRevenue: Number(
+          summary.totalRevenue || 0
+        ),
+
+        totalOrders:
+          summary.totalOrders || 0,
+
+        averageOrderValue: Number(
+          summary.averageOrderValue || 0
+        ),
+      },
+
+      dailySales,
+
+      paymentMethods,
+
+      orderStatuses,
+
+      topProducts,
+
+      topSellers,
+    });
+  } catch (error) {
+    console.error(
+      "Get Admin Analytics Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while fetching admin analytics",
+    });
+  }
+};
