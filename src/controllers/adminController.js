@@ -4,189 +4,159 @@ import Product from "../models/Product.js";
 import Order from "../models/Order.js";
 import User from "../models/User.js";
 
-// ==========================================
-// ADMIN DASHBOARD OVERVIEW
+// ============================================================
+// ADMIN DASHBOARD
 // GET /api/admin/dashboard
 // Admin Only
-// ==========================================
+// ============================================================
 
 export const getAdminDashboard = async (req, res) => {
   try {
-    const [
-      totalUsers,
-      totalCustomers,
-      totalSellers,
-      totalAdmins,
-      totalProducts,
-      activeProducts,
-      inactiveProducts,
-      totalOrders,
-      pendingOrders,
-      confirmedOrders,
-      processingOrders,
-      shippedOrders,
-      deliveredOrders,
-      cancelledOrders,
-    ] = await Promise.all([
-      User.countDocuments(),
-
-      User.countDocuments({
-        role: "customer",
-      }),
-
-      User.countDocuments({
-        role: "seller",
-      }),
-
-      User.countDocuments({
-        role: "admin",
-      }),
-
-      Product.countDocuments(),
-
-      Product.countDocuments({
-        isActive: true,
-      }),
-
-      Product.countDocuments({
-        isActive: false,
-      }),
-
-      Order.countDocuments(),
-
-      Order.countDocuments({
-        orderStatus: "pending",
-      }),
-
-      Order.countDocuments({
-        orderStatus: "confirmed",
-      }),
-
-      Order.countDocuments({
-        orderStatus: "processing",
-      }),
-
-      Order.countDocuments({
-        orderStatus: "shipped",
-      }),
-
-      Order.countDocuments({
-        orderStatus: "delivered",
-      }),
-
-      Order.countDocuments({
-        orderStatus: "cancelled",
-      }),
-    ]);
-
     // ==========================================
-    // REVENUE
+    // USER COUNTS
     // ==========================================
 
-    const revenueResult = await Order.aggregate([
+    const totalUsers = await User.countDocuments();
+
+    const totalCustomers = await User.countDocuments({
+      role: "customer",
+    });
+
+    const totalSellers = await User.countDocuments({
+      role: "seller",
+    });
+
+    const totalAdmins = await User.countDocuments({
+      role: "admin",
+    });
+
+    const activeUsers = await User.countDocuments({
+      isActive: true,
+    });
+
+    const inactiveUsers = await User.countDocuments({
+      isActive: false,
+    });
+
+    // ==========================================
+    // PRODUCT COUNTS
+    // ==========================================
+
+    const totalProducts = await Product.countDocuments();
+
+    const activeProducts = await Product.countDocuments({
+      isActive: true,
+    });
+
+    const inactiveProducts = await Product.countDocuments({
+      isActive: false,
+    });
+
+    const lowStockProducts = await Product.countDocuments({
+      stock: {
+        $gt: 0,
+        $lte: 5,
+      },
+      isActive: true,
+    });
+
+    const outOfStockProducts = await Product.countDocuments({
+      stock: 0,
+    });
+
+    // ==========================================
+    // ORDER COUNTS
+    // ==========================================
+
+    const totalOrders = await Order.countDocuments();
+
+    const pendingOrders = await Order.countDocuments({
+      orderStatus: "pending",
+    });
+
+    const confirmedOrders = await Order.countDocuments({
+      orderStatus: "confirmed",
+    });
+
+    const processingOrders = await Order.countDocuments({
+      orderStatus: "processing",
+    });
+
+    const shippedOrders = await Order.countDocuments({
+      orderStatus: "shipped",
+    });
+
+    const deliveredOrders = await Order.countDocuments({
+      orderStatus: "delivered",
+    });
+
+    const cancelledOrders = await Order.countDocuments({
+      orderStatus: "cancelled",
+    });
+
+    // ==========================================
+    // SALES / REVENUE
+    // ==========================================
+
+    const salesResult = await Order.aggregate([
       {
         $match: {
           orderStatus: {
             $ne: "cancelled",
           },
-
           paymentStatus: {
             $nin: ["failed", "refunded"],
           },
         },
       },
-
       {
         $group: {
           _id: null,
-
-          totalRevenue: {
-            $sum: "$totalPrice",
-          },
-
           totalSales: {
-            $sum: 1,
+            $sum: "$totalPrice",
           },
         },
       },
     ]);
 
-    const totalRevenue =
-      revenueResult.length > 0
-        ? revenueResult[0].totalRevenue
-        : 0;
-
     const totalSales =
-      revenueResult.length > 0
-        ? revenueResult[0].totalSales
+      salesResult.length > 0
+        ? salesResult[0].totalSales
         : 0;
-
-    // ==========================================
-    // AVERAGE ORDER VALUE
-    // ==========================================
 
     const averageOrderValue =
-      totalSales > 0
+      totalOrders > 0
         ? Number(
-            (
-              totalRevenue /
-              totalSales
-            ).toFixed(2)
+            (totalSales / totalOrders).toFixed(2)
           )
         : 0;
-
-    // ==========================================
-    // LOW STOCK
-    // ==========================================
-
-    const lowStockProducts =
-      await Product.countDocuments({
-        stock: {
-          $gt: 0,
-          $lte: 5,
-        },
-      });
-
-    // ==========================================
-    // OUT OF STOCK
-    // ==========================================
-
-    const outOfStockProducts =
-      await Product.countDocuments({
-        stock: 0,
-      });
 
     // ==========================================
     // RECENT ORDERS
     // ==========================================
 
-    const recentOrders =
-      await Order.find()
-        .populate(
-          "user",
-          "name email"
-        )
-        .sort({
-          createdAt: -1,
-        })
-        .limit(10)
-        .select(
-          "_id user totalPrice paymentStatus orderStatus createdAt"
-        );
+    const recentOrders = await Order.find()
+      .populate(
+        "user",
+        "_id name email"
+      )
+      .sort({
+        createdAt: -1,
+      })
+      .limit(10);
 
     // ==========================================
     // RECENT USERS
     // ==========================================
 
-    const recentUsers =
-      await User.find()
-        .select(
-          "_id name email role isActive createdAt"
-        )
-        .sort({
-          createdAt: -1,
-        })
-        .limit(10);
+    const recentUsers = await User.find()
+      .select(
+        "_id name email role avatar isActive createdAt"
+      )
+      .sort({
+        createdAt: -1,
+      })
+      .limit(10);
 
     // ==========================================
     // RESPONSE
@@ -201,6 +171,8 @@ export const getAdminDashboard = async (req, res) => {
           customers: totalCustomers,
           sellers: totalSellers,
           admins: totalAdmins,
+          active: activeUsers,
+          inactive: inactiveUsers,
         },
 
         products: {
@@ -223,7 +195,6 @@ export const getAdminDashboard = async (req, res) => {
 
         sales: {
           totalSales,
-          totalRevenue,
           averageOrderValue,
         },
 
@@ -233,87 +204,79 @@ export const getAdminDashboard = async (req, res) => {
     });
   } catch (error) {
     console.error(
-      "Admin Dashboard Error:",
+      "Get Admin Dashboard Error:",
       error
     );
 
     return res.status(500).json({
       success: false,
       message:
-        "Something went wrong while loading admin dashboard",
+        "Something went wrong while fetching admin dashboard",
     });
   }
 };
 
-// ==========================================
+// ============================================================
 // GET ALL USERS
 // GET /api/admin/users
 // Admin Only
-// ==========================================
+// ============================================================
 
-export const getAllUsers = async (
-  req,
-  res
-) => {
+export const getAllUsers = async (req, res) => {
   try {
     const {
-      search,
+      search = "",
       role,
       status,
       page = 1,
       limit = 20,
+      sort = "-createdAt",
     } = req.query;
 
     // ==========================================
-    // BUILD FILTER
+    // QUERY
     // ==========================================
 
-    const filter = {};
+    const query = {};
 
-    // ==========================================
-    // SEARCH
-    // ==========================================
-
-    if (search) {
-      filter.$or = [
+    // Search by name/email
+    if (search.trim()) {
+      query.$or = [
         {
           name: {
-            $regex: search,
+            $regex: search.trim(),
             $options: "i",
           },
         },
         {
           email: {
-            $regex: search,
+            $regex: search.trim(),
             $options: "i",
           },
         },
       ];
     }
 
-    // ==========================================
-    // ROLE FILTER
-    // ==========================================
+    // Role filter
+    if (role) {
+      const allowedRoles = [
+        "customer",
+        "seller",
+        "admin",
+      ];
 
-    if (
-      role &&
-      ["customer", "seller", "admin"].includes(
-        role
-      )
-    ) {
-      filter.role = role;
+      if (allowedRoles.includes(role)) {
+        query.role = role;
+      }
     }
 
-    // ==========================================
-    // STATUS FILTER
-    // ==========================================
-
+    // Status filter
     if (status === "active") {
-      filter.isActive = true;
+      query.isActive = true;
     }
 
     if (status === "inactive") {
-      filter.isActive = false;
+      query.isActive = false;
     }
 
     // ==========================================
@@ -325,44 +288,32 @@ export const getAllUsers = async (
       1
     );
 
-    const usersPerPage = Math.min(
-      Math.max(
-        Number(limit) || 20,
-        1
-      ),
+    const perPage = Math.min(
+      Math.max(Number(limit) || 20, 1),
       100
     );
 
     const skip =
-      (currentPage - 1) *
-      usersPerPage;
+      (currentPage - 1) * perPage;
 
     // ==========================================
-    // FETCH USERS
+    // TOTAL
     // ==========================================
 
-    const [users, totalUsers] =
-      await Promise.all([
-        User.find(filter)
-          .select(
-            "_id name email role avatar isActive createdAt updatedAt"
-          )
-          .sort({
-            createdAt: -1,
-          })
-          .skip(skip)
-          .limit(usersPerPage),
-
-        User.countDocuments(filter),
-      ]);
+    const total =
+      await User.countDocuments(query);
 
     // ==========================================
-    // PAGINATION
+    // USERS
     // ==========================================
 
-    const totalPages = Math.ceil(
-      totalUsers / usersPerPage
-    );
+    const users = await User.find(query)
+      .select(
+        "_id name email role avatar isActive createdAt updatedAt"
+      )
+      .sort(sort)
+      .skip(skip)
+      .limit(perPage);
 
     // ==========================================
     // RESPONSE
@@ -374,14 +325,12 @@ export const getAllUsers = async (
       users,
 
       pagination: {
-        currentPage,
-        usersPerPage,
-        totalUsers,
-        totalPages,
-        hasNextPage:
-          currentPage < totalPages,
-        hasPreviousPage:
-          currentPage > 1,
+        page: currentPage,
+        limit: perPage,
+        total,
+        totalPages: Math.ceil(
+          total / perPage
+        ),
       },
     });
   } catch (error) {
@@ -398,11 +347,11 @@ export const getAllUsers = async (
   }
 };
 
-// ==========================================
+// ============================================================
 // GET SINGLE USER
 // GET /api/admin/users/:id
 // Admin Only
-// ==========================================
+// ============================================================
 
 export const getUserById = async (
   req,
@@ -462,11 +411,11 @@ export const getUserById = async (
   }
 };
 
-// ==========================================
+// ============================================================
 // UPDATE USER
 // PUT /api/admin/users/:id
 // Admin Only
-// ==========================================
+// ============================================================
 
 export const updateUser = async (
   req,
@@ -614,9 +563,8 @@ export const updateUser = async (
     // ==========================================
 
     if (avatar !== undefined) {
-      user.avatar = String(
-        avatar
-      ).trim();
+      user.avatar =
+        String(avatar).trim();
     }
 
     // ==========================================
@@ -626,7 +574,7 @@ export const updateUser = async (
     await user.save();
 
     // ==========================================
-    // RESPONSE
+    // SAFE USER
     // ==========================================
 
     const safeUser = {
@@ -639,6 +587,10 @@ export const updateUser = async (
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
 
     return res.status(200).json({
       success: true,
@@ -660,11 +612,11 @@ export const updateUser = async (
   }
 };
 
-// ==========================================
+// ============================================================
 // DELETE USER
 // DELETE /api/admin/users/:id
 // Admin Only
-// ==========================================
+// ============================================================
 
 export const deleteUser = async (
   req,
@@ -726,7 +678,8 @@ export const deleteUser = async (
 
     return res.status(200).json({
       success: true,
-      message: "User deleted successfully",
+      message:
+        "User deleted successfully",
     });
   } catch (error) {
     console.error(
@@ -741,3 +694,294 @@ export const deleteUser = async (
     });
   }
 };
+
+// ============================================================
+// GET ALL PRODUCTS FOR ADMIN
+// GET /api/admin/products
+// Admin Only
+// ============================================================
+
+export const getAllAdminProducts = async (
+  req,
+  res
+) => {
+  try {
+    const {
+      search = "",
+      category,
+      brand,
+      status,
+      page = 1,
+      limit = 20,
+      sort = "-createdAt",
+    } = req.query;
+
+    // ==========================================
+    // QUERY
+    // ==========================================
+
+    const query = {};
+
+    // Search
+    if (search.trim()) {
+      query.$or = [
+        {
+          name: {
+            $regex: search.trim(),
+            $options: "i",
+          },
+        },
+        {
+          brand: {
+            $regex: search.trim(),
+            $options: "i",
+          },
+        },
+        {
+          description: {
+            $regex: search.trim(),
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    // Category
+    if (category) {
+      query.category = category;
+    }
+
+    // Brand
+    if (brand) {
+      query.brand = brand;
+    }
+
+    // Active / inactive
+    if (status === "active") {
+      query.isActive = true;
+    }
+
+    if (status === "inactive") {
+      query.isActive = false;
+    }
+
+    // ==========================================
+    // PAGINATION
+    // ==========================================
+
+    const currentPage = Math.max(
+      Number(page) || 1,
+      1
+    );
+
+    const perPage = Math.min(
+      Math.max(Number(limit) || 20, 1),
+      100
+    );
+
+    const skip =
+      (currentPage - 1) * perPage;
+
+    // ==========================================
+    // TOTAL
+    // ==========================================
+
+    const total =
+      await Product.countDocuments(query);
+
+    // ==========================================
+    // PRODUCTS
+    // ==========================================
+
+    const products =
+      await Product.find(query)
+        .populate(
+          "seller",
+          "_id name email role"
+        )
+        .sort(sort)
+        .skip(skip)
+        .limit(perPage);
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+
+      products,
+
+      pagination: {
+        page: currentPage,
+        limit: perPage,
+        total,
+        totalPages: Math.ceil(
+          total / perPage
+        ),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Get All Admin Products Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while fetching products",
+    });
+  }
+};
+
+// ============================================================
+// GET SINGLE PRODUCT FOR ADMIN
+// GET /api/admin/products/:id
+// Admin Only
+// ============================================================
+
+export const getAdminProductById = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+
+    // ==========================================
+    // VALIDATE ID
+    // ==========================================
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
+
+    // ==========================================
+    // FIND PRODUCT
+    // ==========================================
+
+    const product =
+      await Product.findById(id).populate(
+        "seller",
+        "_id name email role"
+      );
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+      product,
+    });
+  } catch (error) {
+    console.error(
+      "Get Admin Product By ID Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Something went wrong while fetching product",
+    });
+  }
+};
+
+// ============================================================
+// UPDATE PRODUCT ACTIVE STATUS
+// PATCH /api/admin/products/:id/status
+// Admin Only
+// ============================================================
+
+export const updateAdminProductStatus =
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { isActive } = req.body;
+
+      // ==========================================
+      // VALIDATE ID
+      // ==========================================
+
+      if (
+        !mongoose.Types.ObjectId.isValid(id)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid product ID",
+        });
+      }
+
+      // ==========================================
+      // VALIDATE STATUS
+      // ==========================================
+
+      if (
+        typeof isActive !== "boolean"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "isActive must be true or false",
+        });
+      }
+
+      // ==========================================
+      // FIND PRODUCT
+      // ==========================================
+
+      const product =
+        await Product.findById(id);
+
+      if (!product) {
+        return res.status(404).json({
+          success: false,
+          message: "Product not found",
+        });
+      }
+
+      // ==========================================
+      // UPDATE
+      // ==========================================
+
+      product.isActive = isActive;
+
+      await product.save();
+
+      // ==========================================
+      // RESPONSE
+      // ==========================================
+
+      return res.status(200).json({
+        success: true,
+        message: isActive
+          ? "Product activated successfully"
+          : "Product deactivated successfully",
+        product,
+      });
+    } catch (error) {
+      console.error(
+        "Update Admin Product Status Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Something went wrong while updating product status",
+      });
+    }
+  };
