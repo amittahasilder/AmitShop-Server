@@ -19,6 +19,7 @@ import couponRoutes from "./routes/couponRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import sellerRoutes from "./routes/sellerRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 // ==========================================
 // APP
@@ -122,9 +123,10 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/seller", sellerRoutes);
 
 // ==========================================
-// IMPORTANT
-// DO NOT ADD paymentRoutes AGAIN HERE
+// ADMIN ROUTES
 // ==========================================
+
+app.use("/api/admin", adminRoutes);
 
 // ==========================================
 // TEST ROUTE
