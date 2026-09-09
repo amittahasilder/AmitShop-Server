@@ -18,6 +18,7 @@ import orderRoutes from "./routes/orderRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import sellerRoutes from "./routes/sellerRoutes.js";
 
 // ==========================================
 // APP
@@ -26,7 +27,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 const app = express();
 
 // ==========================================
-// MIDDLEWARE
+// CORS
 // ==========================================
 
 app.use(
@@ -38,8 +39,26 @@ app.use(
   })
 );
 
+// ==========================================
+// PAYMENT ROUTES
+// IMPORTANT:
+// Stripe webhook must come BEFORE express.json()
+// ==========================================
+
+app.use("/api/payments", paymentRoutes);
+
+// ==========================================
+// GLOBAL MIDDLEWARE
+// ==========================================
+
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
 app.use(cookieParser());
 
 // ==========================================
@@ -97,10 +116,15 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/coupons", couponRoutes);
 
 // ==========================================
-// PAYMENT ROUTES
+// SELLER ROUTES
 // ==========================================
 
-app.use("/api/payments", paymentRoutes);
+app.use("/api/seller", sellerRoutes);
+
+// ==========================================
+// IMPORTANT
+// DO NOT ADD paymentRoutes AGAIN HERE
+// ==========================================
 
 // ==========================================
 // TEST ROUTE
