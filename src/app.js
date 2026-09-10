@@ -5,6 +5,12 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 
 // ==========================================
+// ERROR MIDDLEWARE IMPORT
+// ==========================================
+
+import { errorHandler } from "./middleware/errorMiddleware.js";
+
+// ==========================================
 // ROUTES IMPORT
 // ==========================================
 
@@ -149,6 +155,14 @@ app.use((req, res) => {
     message: "Route not found",
   });
 });
+
+// ==========================================
+// GLOBAL ERROR HANDLER
+// IMPORTANT:
+// Must be AFTER all routes and 404 handler
+// ==========================================
+
+app.use(errorHandler);
 
 // ==========================================
 // EXPORT APP
