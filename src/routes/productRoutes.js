@@ -3,6 +3,7 @@ import express from "express";
 import {
   createProduct,
   getAllProducts,
+  getMyProducts,
   getSingleProduct,
   updateProduct,
   deleteProduct,
@@ -21,6 +22,7 @@ const router = express.Router();
 // PRODUCT ROUTES
 // ==========================================
 
+
 // ==========================================
 // GET ALL PRODUCTS
 // Public
@@ -28,12 +30,29 @@ const router = express.Router();
 
 router.get("/", getAllProducts);
 
+
+// ==========================================
+// GET MY PRODUCTS
+// Seller → Own Products
+// Admin → All Products
+// Login Required
+// ==========================================
+
+router.get(
+  "/my-products",
+  protect,
+  authorizeRoles("seller", "admin"),
+  getMyProducts
+);
+
+
 // ==========================================
 // GET SINGLE PRODUCT
 // Public
 // ==========================================
 
 router.get("/:id", getSingleProduct);
+
 
 // ==========================================
 // CREATE PRODUCT
@@ -49,6 +68,7 @@ router.post(
   createProduct
 );
 
+
 // ==========================================
 // UPDATE PRODUCT
 // Seller + Admin only
@@ -63,6 +83,7 @@ router.put(
   updateProduct
 );
 
+
 // ==========================================
 // DELETE PRODUCT
 // Seller + Admin only
@@ -74,5 +95,6 @@ router.delete(
   authorizeRoles("seller", "admin"),
   deleteProduct
 );
+
 
 export default router;
