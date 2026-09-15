@@ -15,6 +15,7 @@ import { errorHandler } from "./middleware/errorMiddleware.js";
 // ==========================================
 
 import authRoutes from "./routes/authRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
@@ -73,6 +74,12 @@ app.use(cookieParser());
 // ==========================================
 
 app.use("/api/auth", authRoutes);
+
+// ==========================================
+// USER / PROFILE ROUTES
+// ==========================================
+
+app.use("/api/users", userRoutes);
 
 // ==========================================
 // PRODUCT ROUTES
