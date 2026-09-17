@@ -10,6 +10,8 @@ import {
   getAdminOrderById,
   updateOrderStatus,
   deleteOrder,
+  getSellerOrderById,
+  updateSellerOrderStatus,
 } from "../controllers/orderController.js";
 
 import {
@@ -19,11 +21,11 @@ import {
 
 const router = express.Router();
 
-// ==========================================
+// =========================================================
 // CREATE ORDER
 // POST /api/orders
 // Login Required
-// ==========================================
+// =========================================================
 
 router.post(
   "/",
@@ -31,11 +33,11 @@ router.post(
   createOrder
 );
 
-// ==========================================
+// =========================================================
 // GET MY ORDERS
 // GET /api/orders/my-orders
 // Login Required
-// ==========================================
+// =========================================================
 
 router.get(
   "/my-orders",
@@ -43,11 +45,37 @@ router.get(
   getMyOrders
 );
 
-// ==========================================
+// =========================================================
+// SELLER - GET SINGLE ORDER
+// GET /api/orders/seller/:orderId
+// Seller + Admin Required
+// =========================================================
+
+router.get(
+  "/seller/:orderId",
+  protect,
+  authorizeRoles("seller", "admin"),
+  getSellerOrderById
+);
+
+// =========================================================
+// SELLER - UPDATE ORDER STATUS
+// PUT /api/orders/seller/:orderId/status
+// Seller + Admin Required
+// =========================================================
+
+router.put(
+  "/seller/:orderId/status",
+  protect,
+  authorizeRoles("seller", "admin"),
+  updateSellerOrderStatus
+);
+
+// =========================================================
 // ADMIN - GET ALL ORDERS
 // GET /api/orders/admin/all
 // Admin Required
-// ==========================================
+// =========================================================
 
 router.get(
   "/admin/all",
@@ -56,11 +84,11 @@ router.get(
   getAllOrders
 );
 
-// ==========================================
+// =========================================================
 // ADMIN - GET SINGLE ORDER
 // GET /api/orders/admin/:orderId
 // Admin Required
-// ==========================================
+// =========================================================
 
 router.get(
   "/admin/:orderId",
@@ -69,11 +97,11 @@ router.get(
   getAdminOrderById
 );
 
-// ==========================================
+// =========================================================
 // ADMIN - UPDATE ORDER STATUS
 // PUT /api/orders/admin/:orderId/status
 // Admin Required
-// ==========================================
+// =========================================================
 
 router.put(
   "/admin/:orderId/status",
@@ -82,11 +110,11 @@ router.put(
   updateOrderStatus
 );
 
-// ==========================================
+// =========================================================
 // ADMIN - DELETE ORDER
 // DELETE /api/orders/admin/:orderId
 // Admin Required
-// ==========================================
+// =========================================================
 
 router.delete(
   "/admin/:orderId",
@@ -95,11 +123,11 @@ router.delete(
   deleteOrder
 );
 
-// ==========================================
+// =========================================================
 // ORDER TRACKING
 // GET /api/orders/:orderId/tracking
 // Customer + Admin
-// ==========================================
+// =========================================================
 
 router.get(
   "/:orderId/tracking",
@@ -107,11 +135,11 @@ router.get(
   getOrderTracking
 );
 
-// ==========================================
+// =========================================================
 // CANCEL MY ORDER
 // PUT /api/orders/:orderId/cancel
 // Login Required
-// ==========================================
+// =========================================================
 
 router.put(
   "/:orderId/cancel",
@@ -119,11 +147,11 @@ router.put(
   cancelOrder
 );
 
-// ==========================================
+// =========================================================
 // GET SINGLE ORDER
 // GET /api/orders/:orderId
 // Login Required
-// ==========================================
+// =========================================================
 
 router.get(
   "/:orderId",
