@@ -29,6 +29,19 @@ import sellerRoutes from "./routes/sellerRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 
 // ==========================================
+// ADMIN SETTINGS ROUTES
+// ==========================================
+
+import adminSettingsRoutes from "./routes/adminSettingsRoutes.js";
+
+// ==========================================
+// ADMIN SECURITY ROUTES
+// F24.6
+// ==========================================
+
+import adminSecurityRoutes from "./routes/adminSecurityRoutes.js";
+
+// ==========================================
 // APP
 // ==========================================
 
@@ -140,6 +153,26 @@ app.use("/api/seller", sellerRoutes);
 // ==========================================
 
 app.use("/api/admin", adminRoutes);
+
+// ==========================================
+// ADMIN SETTINGS ROUTES
+// F24.5
+// ==========================================
+
+app.use(
+  "/api/admin/settings",
+  adminSettingsRoutes
+);
+
+// ==========================================
+// ADMIN SECURITY ROUTES
+// F24.6
+// ==========================================
+
+app.use(
+  "/api/admin/security",
+  adminSecurityRoutes
+);
 
 // ==========================================
 // TEST ROUTE
