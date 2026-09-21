@@ -1170,32 +1170,51 @@ export const getAllProducts = async (req, res) => {
       createdAt: -1,
     };
 
-    if (sort === "price-low") {
-      sortOption = {
-        price: 1,
-      };
-    }
-
-    if (sort === "price-high") {
-      sortOption = {
-        price: -1,
-      };
-    }
-
+    // Newest
     if (sort === "newest") {
       sortOption = {
         createdAt: -1,
       };
     }
 
+    // Oldest
     if (sort === "oldest") {
       sortOption = {
         createdAt: 1,
       };
     }
 
+    // Price: Low to High
+    if (sort === "price-low") {
+      sortOption = {
+        price: 1,
+      };
+    }
+
+    // Price: High to Low
+    if (sort === "price-high") {
+      sortOption = {
+        price: -1,
+      };
+    }
+
+    // Highest Rated
     if (sort === "rating") {
       sortOption = {
+        ratings: -1,
+      };
+    }
+
+    // ==========================================
+    // MOST POPULAR
+    // ==========================================
+    // Products with more reviews appear first.
+    // Rating is used as a secondary sort.
+    // ==========================================
+
+    if (sort === "popular") {
+      sortOption = {
+        numReviews: -1,
         ratings: -1,
       };
     }
@@ -1793,4 +1812,3 @@ export const deleteProduct = async (
     });
   }
 };
-
