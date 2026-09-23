@@ -56,20 +56,15 @@ app.use(
     origin:
       process.env.CLIENT_URL ||
       "http://localhost:5173",
+
     credentials: true,
   })
 );
 
 // ==========================================
-// PAYMENT ROUTES
+// GLOBAL BODY PARSERS
 // IMPORTANT:
-// Stripe webhook must come BEFORE express.json()
-// ==========================================
-
-app.use("/api/payments", paymentRoutes);
-
-// ==========================================
-// GLOBAL MIDDLEWARE
+// Normal API requests need JSON parsing.
 // ==========================================
 
 app.use(express.json());
@@ -80,79 +75,119 @@ app.use(
   })
 );
 
+// ==========================================
+// COOKIE PARSER
+// ==========================================
+
 app.use(cookieParser());
 
 // ==========================================
 // AUTH ROUTES
 // ==========================================
 
-app.use("/api/auth", authRoutes);
+app.use(
+  "/api/auth",
+  authRoutes
+);
 
 // ==========================================
 // USER / PROFILE ROUTES
 // ==========================================
 
-app.use("/api/users", userRoutes);
+app.use(
+  "/api/users",
+  userRoutes
+);
 
 // ==========================================
 // PRODUCT ROUTES
 // ==========================================
 
-app.use("/api/products", productRoutes);
+app.use(
+  "/api/products",
+  productRoutes
+);
 
 // ==========================================
 // CATEGORY ROUTES
 // ==========================================
 
-app.use("/api/categories", categoryRoutes);
+app.use(
+  "/api/categories",
+  categoryRoutes
+);
 
 // ==========================================
 // CART ROUTES
 // ==========================================
 
-app.use("/api/cart", cartRoutes);
+app.use(
+  "/api/cart",
+  cartRoutes
+);
 
 // ==========================================
 // WISHLIST ROUTES
 // ==========================================
 
-app.use("/api/wishlist", wishlistRoutes);
+app.use(
+  "/api/wishlist",
+  wishlistRoutes
+);
 
 // ==========================================
 // REVIEW ROUTES
 // ==========================================
 
-app.use("/api/reviews", reviewRoutes);
+app.use(
+  "/api/reviews",
+  reviewRoutes
+);
 
 // ==========================================
 // ORDER ROUTES
 // ==========================================
 
-app.use("/api/orders", orderRoutes);
+app.use(
+  "/api/orders",
+  orderRoutes
+);
 
 // ==========================================
 // INVENTORY ROUTES
 // ==========================================
 
-app.use("/api/inventory", inventoryRoutes);
+app.use(
+  "/api/inventory",
+  inventoryRoutes
+);
 
 // ==========================================
 // COUPON ROUTES
 // ==========================================
 
-app.use("/api/coupons", couponRoutes);
+app.use(
+  "/api/coupons",
+  couponRoutes
+);
 
 // ==========================================
 // SELLER ROUTES
 // ==========================================
 
-app.use("/api/seller", sellerRoutes);
+app.use(
+  "/api/seller",
+  sellerRoutes
+);
 
 // ==========================================
 // ADMIN ROUTES
 // ==========================================
 
-app.use("/api/admin", adminRoutes);
+app.use(
+  "/api/admin",
+  adminRoutes
+);
 
 // ==========================================
 // ADMIN SETTINGS ROUTES
@@ -172,6 +207,30 @@ app.use(
 app.use(
   "/api/admin/security",
   adminSecurityRoutes
+);
+
+// ==========================================
+// PAYMENT ROUTES
+// IMPORTANT:
+// paymentRoutes contains its own RAW BODY
+// parser specifically for /webhook.
+//
+// Normal payment routes such as:
+//
+// POST /api/payments/create-checkout-session
+//
+// will use the global express.json() above.
+//
+// Webhook:
+//
+// POST /api/payments/webhook
+//
+// uses express.raw() inside paymentRoutes.
+// ==========================================
+
+app.use(
+  "/api/payments",
+  paymentRoutes
 );
 
 // ==========================================

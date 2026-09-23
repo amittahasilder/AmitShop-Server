@@ -3,6 +3,7 @@ import express from "express";
 import {
   createCheckoutSession,
   getCheckoutSession,
+  verifyStripePayment,
   stripeWebhook,
 } from "../controllers/paymentController.js";
 
@@ -48,6 +49,18 @@ router.get(
   "/session/:sessionId",
   protect,
   getCheckoutSession
+);
+
+// ==========================================
+// VERIFY STRIPE PAYMENT
+// GET /api/payments/verify/:sessionId
+// Login Required
+// ==========================================
+
+router.get(
+  "/verify/:sessionId",
+  protect,
+  verifyStripePayment
 );
 
 export default router;

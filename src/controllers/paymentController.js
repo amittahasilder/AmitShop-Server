@@ -588,6 +588,113 @@ const isValidObjectId = (id) => {
 };
 
 // ==========================================
+// HELPER: UPDATE ORDER AFTER SUCCESSFUL PAYMENT
+// ==========================================
+
+const markOrderAsPaid = async (order, session) => {
+  // Already paid
+  if (order.paymentStatus === "paid") {
+    return {
+      alreadyPaid: true,
+      order,
+    };
+  }
+
+  // ==========================================
+  // UPDATE PAYMENT
+  // ==========================================
+
+  order.paymentStatus = "paid";
+
+  order.paymentId =
+    session.payment_intent?.toString() || session.id;
+
+  order.paidAt = new Date();
+
+  // ==========================================
+  // CONFIRM ORDER
+  // ==========================================
+
+  if (order.orderStatus === "pending") {
+    order.orderStatus = "confirmed";
+
+    if (!Array.isArray(order.statusHistory)) {
+      order.statusHistory = [];
+    }
+
+    order.statusHistory.push({
+      status: "confirmed",
+
+      note: "Payment received and order confirmed",
+
+      updatedBy: null,
+
+      createdAt: new Date(),
+    });
+  }
+
+  // ==========================================
+  // SAVE
+  // ==========================================
+
+  await order.save();
+
+  return {
+    alreadyPaid: false,
+    order,
+  };
+};
+
+// ==========================================
+// HELPER: SEND PAYMENT SUCCESS EMAIL
+// ==========================================
+
+const sendPaymentSuccessEmail = async (orderId) => {
+  try {
+    const populatedOrder = await Order.findById(orderId).populate(
+      "user",
+      "name email"
+    );
+
+    if (!populatedOrder?.user?.email) {
+      console.log(
+        `⚠️ Customer email not found for order: ${orderId}`
+      );
+
+      return;
+    }
+
+    const emailContent = paymentSuccessEmailTemplate({
+      name: populatedOrder.user.name,
+
+      orderId: populatedOrder._id,
+
+      totalPrice: populatedOrder.totalPrice,
+    });
+
+    await sendEmail({
+      to: populatedOrder.user.email,
+
+      subject: emailContent.subject,
+
+      html: emailContent.html,
+
+      text: emailContent.text,
+    });
+
+    console.log(
+      `📧 Payment success email sent to: ${populatedOrder.user.email}`
+    );
+  } catch (error) {
+    // Email failure should NOT make payment fail
+    console.error(
+      "Payment Success Email Error:",
+      error
+    );
+  }
+};
+
+// ==========================================
 // CREATE STRIPE CHECKOUT SESSION
 // POST /api/payments/create-checkout-session
 // Login Required
@@ -662,7 +769,8 @@ export const createCheckoutSession = async (req, res) => {
     if (order.orderStatus === "cancelled") {
       return res.status(400).json({
         success: false,
-        message: "Cancelled orders cannot be paid",
+        message:
+          "Cancelled orders cannot be paid",
       });
     }
 
@@ -673,7 +781,8 @@ export const createCheckoutSession = async (req, res) => {
     if (order.paymentStatus === "paid") {
       return res.status(400).json({
         success: false,
-        message: "This order has already been paid",
+        message:
+          "This order has already been paid",
       });
     }
 
@@ -752,12 +861,16 @@ export const createCheckoutSession = async (req, res) => {
     }
 
     // ==========================================
-    // CREATE STRIPE CHECKOUT SESSION
+    // CLIENT URL
     // ==========================================
 
     const clientUrl =
       process.env.CLIENT_URL ||
       "http://localhost:5173";
+
+    // ==========================================
+    // CREATE STRIPE CHECKOUT SESSION
+    // ==========================================
 
     const session =
       await stripe.checkout.sessions.create({
@@ -768,10 +881,13 @@ export const createCheckoutSession = async (req, res) => {
         line_items: lineItems,
 
         success_url:
-          `${clientUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&orderId=${order._id}`,
+          `${clientUrl}/payment/success` +
+          `?session_id={CHECKOUT_SESSION_ID}` +
+          `&orderId=${order._id}`,
 
         cancel_url:
-          `${clientUrl}/payment/cancel?orderId=${order._id}`,
+          `${clientUrl}/payment/cancel` +
+          `?orderId=${order._id}`,
 
         customer_email: req.user.email,
 
@@ -782,13 +898,26 @@ export const createCheckoutSession = async (req, res) => {
         },
 
         billing_address_collection: "auto",
+
+        phone_number_collection: {
+          enabled: true,
+        },
       });
 
     // ==========================================
     // SAVE STRIPE SESSION ID
     // ==========================================
 
-    order.paymentId = session.id;
+    // IMPORTANT:
+    // If your Order model has stripeSessionId,
+    // save the session there.
+
+    if ("stripeSessionId" in order) {
+      order.stripeSessionId = session.id;
+    }
+
+    // Keep paymentId empty until actual payment succeeds.
+    // This avoids treating Stripe session ID as payment ID.
 
     await order.save();
 
@@ -819,6 +948,11 @@ export const createCheckoutSession = async (req, res) => {
 
       message:
         "Something went wrong while creating Stripe checkout session",
+
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
     });
   }
 };
@@ -912,12 +1046,197 @@ export const getCheckoutSession = async (
 };
 
 // ==========================================
+// VERIFY STRIPE PAYMENT
+// GET /api/payments/verify/:sessionId
+// Login Required
+// ==========================================
+
+export const verifyStripePayment = async (
+  req,
+  res
+) => {
+  try {
+    const { sessionId } = req.params;
+
+    // ==========================================
+    // VALIDATE SESSION ID
+    // ==========================================
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: "Stripe session ID is required",
+      });
+    }
+
+    // ==========================================
+    // GET STRIPE SESSION
+    // ==========================================
+
+    const session =
+      await stripe.checkout.sessions.retrieve(
+        sessionId
+      );
+
+    // ==========================================
+    // GET ORDER ID
+    // ==========================================
+
+    const orderId =
+      session.metadata?.orderId;
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Order ID not found in Stripe session",
+      });
+    }
+
+    // ==========================================
+    // VALIDATE ORDER ID
+    // ==========================================
+
+    if (!isValidObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID",
+      });
+    }
+
+    // ==========================================
+    // SECURITY CHECK
+    // ==========================================
+
+    if (
+      session.metadata?.userId !==
+      req.user._id.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You are not authorized to verify this payment",
+      });
+    }
+
+    // ==========================================
+    // FIND ORDER
+    // ==========================================
+
+    const order =
+      await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // ==========================================
+    // CHECK ORDER OWNER
+    // ==========================================
+
+    if (
+      order.user.toString() !==
+      req.user._id.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You are not authorized to verify this order",
+      });
+    }
+
+    // ==========================================
+    // PAYMENT NOT COMPLETED
+    // ==========================================
+
+    if (
+      session.payment_status !== "paid"
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "Payment has not been completed",
+
+        paymentStatus:
+          session.payment_status,
+
+        sessionStatus:
+          session.status,
+      });
+    }
+
+    // ==========================================
+    // UPDATE ORDER
+    // ==========================================
+
+    const wasAlreadyPaid =
+      order.paymentStatus === "paid";
+
+    await markOrderAsPaid(
+      order,
+      session
+    );
+
+    // ==========================================
+    // SEND EMAIL ONLY ON FIRST SUCCESS
+    // ==========================================
+
+    if (!wasAlreadyPaid) {
+      await sendPaymentSuccessEmail(
+        order._id
+      );
+    }
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "Payment verified successfully",
+
+      paymentStatus: "paid",
+
+      paymentId:
+        session.payment_intent?.toString() ||
+        session.id,
+
+      orderId: order._id,
+
+      orderStatus:
+        order.orderStatus,
+    });
+  } catch (error) {
+    console.error(
+      "Verify Stripe Payment Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+
+      message:
+        "Something went wrong while verifying Stripe payment",
+    });
+  }
+};
+
+// ==========================================
 // STRIPE WEBHOOK
 // POST /api/payments/webhook
 // Stripe Only
 // ==========================================
 
-export const stripeWebhook = async (req, res) => {
+export const stripeWebhook = async (
+  req,
+  res
+) => {
   const signature =
     req.headers["stripe-signature"];
 
@@ -953,7 +1272,8 @@ export const stripeWebhook = async (req, res) => {
 
     return res.status(400).json({
       success: false,
-      message: "Invalid Stripe webhook signature",
+      message:
+        "Invalid Stripe webhook signature",
     });
   }
 
@@ -970,7 +1290,8 @@ export const stripeWebhook = async (req, res) => {
       event.type ===
       "checkout.session.completed"
     ) {
-      const session = event.data.object;
+      const session =
+        event.data.object;
 
       const orderId =
         session.metadata?.orderId;
@@ -1031,118 +1352,39 @@ export const stripeWebhook = async (req, res) => {
       if (
         session.payment_status === "paid"
       ) {
+        const wasAlreadyPaid =
+          order.paymentStatus === "paid";
+
         // ==========================================
-        // PREVENT DUPLICATE PROCESSING
+        // UPDATE ORDER
         // ==========================================
 
-        if (
-          order.paymentStatus !== "paid"
-        ) {
-          // ==========================================
-          // UPDATE PAYMENT
-          // ==========================================
+        await markOrderAsPaid(
+          order,
+          session
+        );
 
-          order.paymentStatus = "paid";
+        // ==========================================
+        // SEND EMAIL ONLY ONCE
+        // ==========================================
 
-          order.paymentId =
-            session.payment_intent?.toString() ||
-            session.id;
-
-          order.paidAt = new Date();
-
-          // ==========================================
-          // CONFIRM ORDER
-          // ==========================================
-
-          if (
-            order.orderStatus === "pending"
-          ) {
-            order.orderStatus =
-              "confirmed";
-
-            order.statusHistory.push({
-              status: "confirmed",
-
-              note:
-                "Payment received and order confirmed",
-
-              updatedBy: null,
-
-              createdAt: new Date(),
-            });
-          }
-
-          // ==========================================
-          // SAVE ORDER
-          // ==========================================
-
-          await order.save();
-
-          // ==========================================
-          // GET CUSTOMER INFORMATION
-          // ==========================================
-
-          const populatedOrder =
-            await Order.findById(order._id)
-              .populate(
-                "user",
-                "name email"
-              );
-
-          // ==========================================
-          // SEND PAYMENT SUCCESS EMAIL
-          // ==========================================
-
-          if (
-            populatedOrder?.user?.email
-          ) {
-            const emailContent =
-              paymentSuccessEmailTemplate({
-                name:
-                  populatedOrder.user.name,
-
-                orderId:
-                  populatedOrder._id,
-
-                totalPrice:
-                  populatedOrder.totalPrice,
-              });
-
-            await sendEmail({
-              to:
-                populatedOrder.user.email,
-
-              subject:
-                emailContent.subject,
-
-              html:
-                emailContent.html,
-
-              text:
-                emailContent.text,
-            });
-
-            console.log(
-              `📧 Payment success email sent to: ${populatedOrder.user.email}`
-            );
-          } else {
-            console.log(
-              `⚠️ Customer email not found for order: ${order._id}`
-            );
-          }
-
-          // ==========================================
-          // SUCCESS LOG
-          // ==========================================
-
-          console.log(
-            `✅ Stripe payment successful for order: ${order._id}`
-          );
-        } else {
-          console.log(
-            `ℹ️ Stripe webhook already processed for order: ${order._id}`
+        if (!wasAlreadyPaid) {
+          await sendPaymentSuccessEmail(
+            order._id
           );
         }
+
+        // ==========================================
+        // SUCCESS LOG
+        // ==========================================
+
+        console.log(
+          `✅ Stripe payment successful for order: ${order._id}`
+        );
+      } else {
+        console.log(
+          `⚠️ Stripe checkout completed but payment status is: ${session.payment_status}`
+        );
       }
     }
 
@@ -1154,7 +1396,8 @@ export const stripeWebhook = async (req, res) => {
       event.type ===
       "checkout.session.async_payment_failed"
     ) {
-      const session = event.data.object;
+      const session =
+        event.data.object;
 
       const orderId =
         session.metadata?.orderId;
@@ -1190,7 +1433,8 @@ export const stripeWebhook = async (req, res) => {
       event.type ===
       "checkout.session.expired"
     ) {
-      const session = event.data.object;
+      const session =
+        event.data.object;
 
       const orderId =
         session.metadata?.orderId;
